@@ -146,7 +146,7 @@ service cloud.firestore {
       data.createdAt is timestamp;
     }
 
-    // Validation Blueprint: LeaderboardEntry (public, zero PII, normalized 5-round scale 0..25000)
+    // Validation Blueprint: LeaderboardEntry (legacy public, zero PII, normalized 5-round scale 0..25000)
     function isValidLeaderboardEntry(data) {
       return data.keys().hasAll([
         'uid',
@@ -191,7 +191,7 @@ service cloud.firestore {
       data.updatedAt is timestamp;
     }
 
-    // Validation Blueprint: DailyLeaderboardEntry (public, zero PII, immutable 1 official run per day)
+    // Validation Blueprint: DailyLeaderboardEntry (legacy public, zero PII, immutable 1 official run per day)
     function isValidDailyLeaderboardEntry(data) {
       return data.keys().hasAll([
         'dateKey',
@@ -231,6 +231,100 @@ service cloud.firestore {
       data.averageDistanceKm <= 25000 &&
       data.timedMode is bool &&
       data.createdAt is timestamp;
+    }
+
+    // Validation Blueprint: UnifiedRankingEntry (public, zero PII, supports authenticated & guest players)
+    function isExpectedRankingDocId(data, rankingId) {
+      return (data.playerType == 'authenticated'
+          && data.gameMode == 'standard'
+          && rankingId == 'auth_' + data.actorId + '_standard')
+        || (data.playerType == 'authenticated'
+          && data.gameMode == 'daily'
+          && rankingId == 'auth_' + data.actorId + '_daily_' + data.dateKey)
+        || (data.playerType == 'guest'
+          && data.gameMode == 'standard'
+          && rankingId == 'guest_' + data.actorId + '_standard')
+        || (data.playerType == 'guest'
+          && data.gameMode == 'daily'
+          && rankingId == 'guest_' + data.actorId + '_daily_' + data.dateKey);
+    }
+
+    function isValidUnifiedRankingEntry(data, rankingId) {
+      return data.keys().hasAll([
+        'id',
+        'playerType',
+        'actorId',
+        'gameMode',
+        'dateKey',
+        'playerName',
+        'photoUrl',
+        'bestScore',
+        'rawScore',
+        'roundsCount',
+        'averageDistanceKm',
+        'gamesPlayed',
+        'timedMode',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'id',
+        'playerType',
+        'actorId',
+        'gameMode',
+        'dateKey',
+        'playerName',
+        'photoUrl',
+        'bestScore',
+        'rawScore',
+        'roundsCount',
+        'averageDistanceKm',
+        'gamesPlayed',
+        'timedMode',
+        'createdAt',
+        'updatedAt'
+      ]) &&
+      isValidId(data.id) &&
+      data.id == rankingId &&
+      data.playerType is string &&
+      data.playerType.size() <= 16 &&
+      data.playerType in ['guest', 'authenticated'] &&
+      isValidId(data.actorId) &&
+      data.actorId.size() >= 4 &&
+      data.actorId.size() <= 80 &&
+      data.gameMode is string &&
+      data.gameMode.size() <= 16 &&
+      data.gameMode in ['standard', 'daily'] &&
+      data.dateKey is string &&
+      data.dateKey.size() >= 3 &&
+      data.dateKey.size() <= 10 &&
+      ((data.gameMode == 'standard' && data.dateKey == 'all')
+        || (data.gameMode == 'daily' && data.dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))) &&
+      isExpectedRankingDocId(data, rankingId) &&
+      data.playerName is string &&
+      ((data.playerType == 'guest' && data.playerName.size() >= 2 && data.playerName.size() <= 30)
+        || (data.playerType == 'authenticated' && data.playerName.size() >= 1 && data.playerName.size() <= 60)) &&
+      data.photoUrl is string &&
+      data.photoUrl.size() <= 500 &&
+      (data.playerType == 'authenticated' || data.photoUrl.size() == 0) &&
+      data.roundsCount is int &&
+      data.roundsCount in [3, 5, 10, 15, 20] &&
+      (data.gameMode == 'standard' || data.roundsCount == 5) &&
+      data.bestScore is int &&
+      data.bestScore >= 0 &&
+      data.bestScore <= 25000 &&
+      data.rawScore is int &&
+      data.rawScore >= 0 &&
+      data.rawScore <= data.roundsCount * 5000 &&
+      data.averageDistanceKm is number &&
+      data.averageDistanceKm >= 0 &&
+      data.averageDistanceKm <= 25000 &&
+      data.gamesPlayed is int &&
+      data.gamesPlayed >= 1 &&
+      data.gamesPlayed <= 100000 &&
+      data.timedMode is bool &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
     }
 
     // Validation Blueprint: LocationDocument (public atlas, admin-writable, Poland WGS84 bounds)
@@ -382,7 +476,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Collection 3: Public global leaderboard (zero PII)
+    // Collection 3: Legacy public global leaderboard (zero PII)
     match /leaderboard/{userId} {
       allow get: if isValidId(userId)
         && (resource == null
@@ -418,7 +512,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Collection 4: Public daily challenge leaderboard (immutable, 1 official run per player per day, zero PII)
+    // Collection 4: Legacy public daily challenge leaderboard (immutable, 1 official run per player per day, zero PII)
     match /dailyLeaderboard/{entryId} {
       allow get: if isValidId(entryId)
         && (resource == null
@@ -438,7 +532,71 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Collection 5: Public GeoPolska location atlas (admin-managed, zero PII)
+    // Collection 5: Unified public rankings table (authenticated Google users + unauthenticated guests)
+    match /rankings/{rankingId} {
+      allow get: if isValidId(rankingId)
+        && (resource == null
+          || (existing().bestScore is int
+            && existing().bestScore >= 0
+            && existing().bestScore <= 25000));
+      allow list: if resource.data.dateKey is string
+        && resource.data.dateKey.size() >= 3
+        && resource.data.dateKey.size() <= 10;
+      allow create: if isValidId(rankingId)
+        && isValidUnifiedRankingEntry(incoming(), rankingId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().playerType == 'authenticated'
+            && isVerifiedUser()
+            && incoming().actorId == request.auth.uid
+            && hasProfile(request.auth.uid))
+          || (incoming().playerType == 'guest'
+            && request.auth == null)
+        );
+      allow update: if isValidId(rankingId)
+        && isValidUnifiedRankingEntry(incoming(), rankingId)
+        && existing().gameMode == 'standard'
+        && incoming().id == existing().id
+        && incoming().playerType == existing().playerType
+        && incoming().actorId == existing().actorId
+        && incoming().gameMode == existing().gameMode
+        && incoming().dateKey == existing().dateKey
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().gamesPlayed >= existing().gamesPlayed
+        && (
+          (existing().playerType == 'authenticated'
+            && isVerifiedUser()
+            && existing().actorId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'playerName',
+              'photoUrl',
+              'bestScore',
+              'rawScore',
+              'roundsCount',
+              'averageDistanceKm',
+              'gamesPlayed',
+              'timedMode',
+              'updatedAt'
+            ]))
+          || (existing().playerType == 'guest'
+            && request.auth == null
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'playerName',
+              'bestScore',
+              'rawScore',
+              'roundsCount',
+              'averageDistanceKm',
+              'gamesPlayed',
+              'timedMode',
+              'updatedAt'
+            ]))
+        );
+      allow delete: if false;
+    }
+
+    // Collection 6: Public GeoPolska location atlas (admin-managed, zero PII)
     match /locations/{locationId} {
       allow get: if isValidId(locationId)
         && (resource == null || existing().catalogKey == 'poland');
@@ -475,7 +633,7 @@ service cloud.firestore {
         && isAdmin();
     }
 
-    // Collection 6: Single-document catalog version manifest (no list allowed)
+    // Collection 7: Single-document catalog version manifest (no list allowed)
     match /catalogMeta/{catalogId} {
       allow get: if isValidId(catalogId)
         && (resource == null || (existing().version is int && existing().version >= 1));
@@ -502,7 +660,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Collection 7: Admin privilege markers (never client-writable)
+    // Collection 8: Admin privilege markers (never client-writable)
     match /admins/{userId} {
       allow get: if isValidId(userId) && isOwner(userId);
       allow list: if false;

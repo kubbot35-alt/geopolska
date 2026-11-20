@@ -10,6 +10,7 @@ import {
   LogIn,
   RotateCcw,
   Trophy,
+  UserCheck,
 } from 'lucide-react';
 import {formatPolishDateKey} from '../../domain/dailyChallenge';
 import {
@@ -38,9 +39,11 @@ export interface SummaryScreenProps {
   readonly mapStyle: MapStyleOption;
   readonly onChangeMapStyle: (style: MapStyleOption) => void;
   readonly player: PlayerIdentity | null;
+  readonly guestSavedNickname: string | null;
   readonly onPlayAgain: () => void;
   readonly onReturnToMenu: () => void;
   readonly onOpenLeaderboard: (dailyFirst?: boolean) => void;
+  readonly onOpenGuestNicknameModal: () => void;
   readonly onSignIn: () => void;
 }
 
@@ -69,9 +72,11 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({
   mapStyle,
   onChangeMapStyle,
   player,
+  guestSavedNickname,
   onPlayAgain,
   onReturnToMenu,
   onOpenLeaderboard,
+  onOpenGuestNicknameModal,
   onSignIn,
 }) => {
   const roundsCount = completedRounds.length;
@@ -194,42 +199,81 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({
               {syncStatus === 'saved' && (
                 <div className="flex items-center gap-2 text-emerald-300">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>
-                    Wynik zapisany na koncie <strong>{player?.displayName}</strong>
-                    {isDaily
-                      ? ' oraz w oficjalnym Rankingu Dnia (pierwsza próba).'
-                      : ' i zaktualizowany w rankingu globalnym.'}
-                  </span>
+                  {player ? (
+                    <span>
+                      Wynik zapisany na koncie <strong>{player.displayName}</strong>
+                      {isDaily
+                        ? ' oraz w oficjalnym Rankingu Dnia (pierwsza próba).'
+                        : ' i zaktualizowany w rankingu globalnym.'}
+                    </span>
+                  ) : syncMessage ? (
+                    <span>{syncMessage}</span>
+                  ) : (
+                    <span>
+                      Wynik zapisany jako Gość:{' '}
+                      <strong>{guestSavedNickname || 'Gość'}</strong>
+                      {isDaily
+                        ? ' w oficjalnym Rankingu Dnia.'
+                        : ' w rankingu globalnym.'}
+                    </span>
+                  )}
                 </div>
               )}
               {syncStatus === 'offline_queued' && (
                 <div className="flex items-center gap-2 text-amber-200">
                   <CloudOff className="h-4 w-4 shrink-0 text-amber-400" />
                   <span>
-                    Brak sieci — wynik zapisano w kolejce IndexedDB i zostanie automatycznie
-                    zsynchronizowany po powrocie online.
+                    Brak sieci — wynik
+                    {!player && guestSavedNickname ? ` (${guestSavedNickname})` : ''} zapisano w
+                    kolejce IndexedDB i zostanie automatycznie zsynchronizowany po powrocie online.
                   </span>
                 </div>
               )}
               {syncStatus === 'guest' && (
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-3">
                   <span className="text-slate-300">
-                    Zaloguj się kontem Google, aby zapisać wynik w rankingu globalnym i Rankingu Dnia.
+                    Zapisz wynik w tabeli Rankingi pod własnym nickiem jako Gość lub zaloguj się
+                    kontem Google.
                   </span>
-                  <button
-                    type="button"
-                    onClick={onSignIn}
-                    className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 whitespace-nowrap shrink-0"
-                  >
-                    <LogIn className="h-3.5 w-3.5" />
-                    Zaloguj Google
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={onOpenGuestNicknameModal}
+                      className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold whitespace-nowrap shrink-0 ${
+                        isDaily
+                          ? 'bg-amber-400 text-[#090E14] hover:bg-amber-300'
+                          : 'bg-emerald-500 text-[#05120D] hover:bg-emerald-400'
+                      }`}
+                    >
+                      <UserCheck className="h-3.5 w-3.5" />
+                      Podaj nick i zapisz
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onSignIn}
+                      className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-[#101822] px-3.5 py-2 text-xs font-semibold text-slate-200 hover:border-emerald-400/40 hover:text-white whitespace-nowrap shrink-0"
+                    >
+                      <LogIn className="h-3.5 w-3.5 text-emerald-400" />
+                      Zaloguj Google
+                    </button>
+                  </div>
                 </div>
               )}
               {syncStatus === 'error' && (
-                <p className="text-rose-300">
-                  {syncMessage || 'Nie udało się zsynchronizować wyniku z chmurą.'}
-                </p>
+                <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-rose-300">
+                    {syncMessage || 'Nie udało się zsynchronizować wyniku z chmurą.'}
+                  </p>
+                  {!player && (
+                    <button
+                      type="button"
+                      onClick={onOpenGuestNicknameModal}
+                      className="inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-lg border border-white/15 bg-[#101822] px-3 py-1.5 text-xs font-semibold text-white hover:border-emerald-400/40 whitespace-nowrap shrink-0"
+                    >
+                      Spróbuj ponownie
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>

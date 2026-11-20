@@ -1,13 +1,14 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {Calendar, Clock, History, Loader2, LogIn, Medal, Trophy, X} from 'lucide-react';
 import {formatPolishDateKey, getWarsawDateKey} from '../../domain/dailyChallenge';
 import {formatDistanceKm} from '../../domain/geoScoring';
+import {filterUnifiedRankings} from '../../domain/rankings';
 import type {
-  DailyLeaderboardEntry,
   IGamePersistenceRepository,
-  LeaderboardEntry,
   PlayerIdentity,
+  RankingPlayerFilter,
   StoredGameSummary,
+  UnifiedRankingEntry,
 } from '../../domain/types';
 
 export type LeaderboardModalTab = 'daily' | 'leaderboard' | 'history';
@@ -18,6 +19,7 @@ export interface LeaderboardHistoryModalProps {
   readonly onClose: () => void;
   readonly repository: IGamePersistenceRepository;
   readonly player: PlayerIdentity | null;
+  readonly guestClientId: string;
   readonly onSignIn: () => void;
 }
 
@@ -41,13 +43,15 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
   onClose,
   repository,
   player,
+  guestClientId,
   onSignIn,
 }) => {
   const [tab, setTab] = useState<LeaderboardModalTab>(initialTab);
+  const [playerFilter, setPlayerFilter] = useState<RankingPlayerFilter>('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dailyEntries, setDailyEntries] = useState<readonly DailyLeaderboardEntry[]>([]);
-  const [entries, setEntries] = useState<readonly LeaderboardEntry[]>([]);
+  const [dailyEntries, setDailyEntries] = useState<readonly UnifiedRankingEntry[]>([]);
+  const [standardEntries, setStandardEntries] = useState<readonly UnifiedRankingEntry[]>([]);
   const [history, setHistory] = useState<readonly StoredGameSummary[]>([]);
 
   const todayDateKey = getWarsawDateKey();
@@ -69,7 +73,7 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
       setLoading(true);
       setError(null);
       if (tab === 'daily') {
-        const res = await repository.fetchDailyLeaderboard(todayDateKey, 30);
+        const res = await repository.fetchUnifiedRankings('daily', todayDateKey, 60);
         if (cancelled) return;
         if (res.ok) {
           setDailyEntries(res.value);
@@ -77,10 +81,10 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
           setError(res.error);
         }
       } else if (tab === 'leaderboard') {
-        const res = await repository.fetchLeaderboard(25);
+        const res = await repository.fetchUnifiedRankings('standard', null, 60);
         if (cancelled) return;
         if (res.ok) {
-          setEntries(res.value);
+          setStandardEntries(res.value);
         } else {
           setError(res.error);
         }
@@ -104,9 +108,61 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
     };
   }, [open, tab, player, repository, todayDateKey]);
 
+  const activeRankingSource = tab === 'daily' ? dailyEntries : standardEntries;
+
+  const filterCounts = useMemo(() => {
+    let guests = 0;
+    let authenticated = 0;
+    for (const entry of activeRankingSource) {
+      if (entry.playerType === 'guest') {
+        guests += 1;
+      } else {
+        authenticated += 1;
+      }
+    }
+    return {
+      all: activeRankingSource.length,
+      guest: guests,
+      authenticated,
+    };
+  }, [activeRankingSource]);
+
+  const filteredEntries = useMemo(
+    () => filterUnifiedRankings(activeRankingSource, playerFilter),
+    [activeRankingSource, playerFilter],
+  );
+
   if (!open) {
     return null;
   }
+
+  const isDailyTab = tab === 'daily';
+
+  const isCurrentActor = (entry: UnifiedRankingEntry): boolean => {
+    if (entry.playerType === 'authenticated' && player) {
+      return player.uid === entry.actorId;
+    }
+    if (entry.playerType === 'guest' && !player) {
+      return guestClientId === entry.actorId;
+    }
+    return false;
+  };
+
+  const renderEmptyRankingMessage = (): string => {
+    if (playerFilter === 'guest') {
+      return isDailyTab
+        ? 'Brak jeszcze wyników gości w dzisiejszym Wyzwaniu Dnia. Zagraj bez logowania i podaj swój nick na końcu partii!'
+        : 'Brak jeszcze wyników gości w rankingu globalnym. Ukończ grę bez logowania i wpisz swój nick, aby trafić na listę!';
+    }
+    if (playerFilter === 'authenticated') {
+      return isDailyTab
+        ? 'Brak jeszcze wyników zalogowanych graczy w dzisiejszym Wyzwaniu Dnia.'
+        : 'Brak jeszcze wyników zalogowanych graczy w rankingu globalnym.';
+    }
+    return isDailyTab
+      ? 'Nikt jeszcze nie ukończył dzisiejszego Wyzwania Dnia. Bądź pierwszą osobą na liście!'
+      : 'Brak zapisanych wyników w rankingu. Rozegraj pierwszą partię jako Gość lub po zalogowaniu Google!';
+  };
 
   return (
     <div
@@ -138,44 +194,85 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex flex-wrap gap-2 border-b border-white/10 bg-[#0C131D] px-5 py-3">
-          <button
-            type="button"
-            onClick={() => setTab('daily')}
-            className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-              tab === 'daily'
-                ? 'bg-amber-400 text-[#090E14]'
-                : 'bg-[#141F2D] text-slate-300 hover:text-white'
-            }`}
-          >
-            <Calendar className="h-4 w-4" />
-            Wyzwanie Dnia
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('leaderboard')}
-            className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-              tab === 'leaderboard'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-[#141F2D] text-slate-300 hover:text-white'
-            }`}
-          >
-            <Medal className="h-4 w-4" />
-            Ranking globalny
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('history')}
-            className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
-              tab === 'history'
-                ? 'bg-emerald-600 text-white'
-                : 'bg-[#141F2D] text-slate-300 hover:text-white'
-            }`}
-          >
-            <History className="h-4 w-4" />
-            Twoja historia gier
-          </button>
+        {/* Mode Tabs */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#0C131D] px-5 py-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setTab('daily')}
+              className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                tab === 'daily'
+                  ? 'bg-amber-400 text-[#090E14]'
+                  : 'bg-[#141F2D] text-slate-300 hover:text-white'
+              }`}
+            >
+              <Calendar className="h-4 w-4" />
+              Wyzwanie Dnia
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('leaderboard')}
+              className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                tab === 'leaderboard'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-[#141F2D] text-slate-300 hover:text-white'
+              }`}
+            >
+              <Medal className="h-4 w-4" />
+              Ranking globalny
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab('history')}
+              className={`inline-flex min-h-[40px] items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                tab === 'history'
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-[#141F2D] text-slate-300 hover:text-white'
+              }`}
+            >
+              <History className="h-4 w-4" />
+              Twoja historia gier
+            </button>
+          </div>
+
+          {/* Account Type Segmented Filter (Wszyscy / Goście / Zalogowani) */}
+          {tab !== 'history' && (
+            <div
+              role="group"
+              aria-label="Filtruj według typu gracza"
+              className="inline-flex items-center rounded-lg border border-white/10 bg-[#090E14] p-1"
+            >
+              {(
+                [
+                  {id: 'all', label: 'Wszyscy', count: filterCounts.all},
+                  {id: 'guest', label: 'Goście', count: filterCounts.guest},
+                  {id: 'authenticated', label: 'Zalogowani', count: filterCounts.authenticated},
+                ] as const
+              ).map((option) => {
+                const active = playerFilter === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setPlayerFilter(option.id)}
+                    className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition-colors whitespace-nowrap ${
+                      active
+                        ? isDailyTab
+                          ? 'bg-amber-400/20 text-amber-200'
+                          : 'bg-emerald-500/20 text-emerald-300'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span>{option.label}</span>
+                    <span className="font-mono text-[11px] opacity-75 tabular-nums">
+                      {option.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Body */}
@@ -202,37 +299,46 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
           ) : loading ? (
             <div className="flex items-center justify-center gap-2.5 py-12 text-sm text-slate-300">
               <Loader2 className="h-5 w-5 animate-spin text-emerald-400" />
-              Ładowanie danych z chmury Firebase...
+              Ładowanie rankingu z bazy Firebase...
             </div>
           ) : error ? (
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
               {error}
             </div>
-          ) : tab === 'daily' ? (
+          ) : tab !== 'history' ? (
             <div className="space-y-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2 pb-1 text-xs text-slate-400">
-                <span>
-                  Oficjalny ranking dnia: <strong className="text-amber-300">{todayLabel}</strong>
-                </span>
-                <span>5 wspólnych miejsc · liczy się pierwsza próba</span>
-              </div>
+              {isDailyTab ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-1 text-xs text-slate-400">
+                  <span>
+                    Oficjalny ranking dnia: <strong className="text-amber-300">{todayLabel}</strong>
+                  </span>
+                  <span>5 wspólnych miejsc · liczy się pierwsza próba</span>
+                </div>
+              ) : (
+                <p className="pb-1 text-xs text-slate-400">
+                  Wyniki w rankingu globalnym są przeliczane na wspólną skalę 5 rund (maks. 25 000 pkt),
+                  dzięki czemu gry 3-, 5-, 10-, 15- i 20-rundowe są uczciwie porównywalne.
+                </p>
+              )}
 
-              {dailyEntries.length === 0 ? (
+              {filteredEntries.length === 0 ? (
                 <p className="py-10 text-center text-sm text-slate-400">
-                  Nikt jeszcze nie ukończył dzisiejszego Wyzwania Dnia. Bądź pierwszą osobą na
-                  liście!
+                  {renderEmptyRankingMessage()}
                 </p>
               ) : (
-                dailyEntries.map((entry, index) => {
-                  const isCurrentUser = player?.uid === entry.uid;
+                filteredEntries.map((entry, index) => {
+                  const isCurrentUser = isCurrentActor(entry);
+                  const accountLabel = entry.playerType === 'guest' ? 'Gość' : 'Google';
+                  const rowHighlight = isCurrentUser
+                    ? isDailyTab
+                      ? 'border-amber-400/50 bg-amber-950/25'
+                      : 'border-emerald-500/45 bg-emerald-950/35'
+                    : 'border-white/5 bg-[#0C131D]';
+
                   return (
                     <div
                       key={entry.id}
-                      className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
-                        isCurrentUser
-                          ? 'border-amber-400/50 bg-amber-950/25'
-                          : 'border-white/5 bg-[#0C131D]'
-                      }`}
+                      className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${rowHighlight}`}
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <span
@@ -257,7 +363,15 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
                             className="h-8 w-8 shrink-0 rounded-full object-cover"
                           />
                         ) : (
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-amber-300">
+                          <div
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold ${
+                              entry.playerType === 'guest'
+                                ? 'text-slate-200'
+                                : isDailyTab
+                                  ? 'text-amber-300'
+                                  : 'text-emerald-300'
+                            }`}
+                          >
                             {entry.playerName.charAt(0).toUpperCase()}
                           </div>
                         )}
@@ -266,19 +380,39 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
                           <p className="truncate text-sm font-semibold text-white">
                             {entry.playerName}
                             {isCurrentUser && (
-                              <span className="ml-2 text-xs font-normal text-amber-300">(Ty)</span>
+                              <span
+                                className={`ml-2 text-xs font-normal ${
+                                  isDailyTab ? 'text-amber-300' : 'text-emerald-400'
+                                }`}
+                              >
+                                (Ty)
+                              </span>
                             )}
                           </p>
-                          <p className="text-xs text-slate-400">
-                            śr. błąd {formatDistanceKm(entry.averageDistanceKm)}
+                          <p className="truncate text-xs text-slate-400">
+                            <span
+                              className={
+                                entry.playerType === 'guest'
+                                  ? 'text-slate-300'
+                                  : 'text-emerald-300/90'
+                              }
+                            >
+                              {accountLabel}
+                            </span>
+                            {!isDailyTab && <> · Gier: {entry.gamesPlayed}</>}
+                            {' · '}śr. błąd {formatDistanceKm(entry.averageDistanceKm)}
                             {entry.timedMode ? ' · 60 s' : ''}
                           </p>
                         </div>
                       </div>
 
                       <div className="shrink-0 text-right">
-                        <p className="font-mono text-base font-bold text-amber-300 tabular-nums">
-                          {entry.score.toLocaleString('pl-PL')} pkt
+                        <p
+                          className={`font-mono text-base font-bold tabular-nums ${
+                            isDailyTab ? 'text-amber-300' : 'text-emerald-400'
+                          }`}
+                        >
+                          {entry.bestScore.toLocaleString('pl-PL')} pkt
                         </p>
                       </div>
                     </div>
@@ -286,80 +420,6 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
                 })
               )}
             </div>
-          ) : tab === 'leaderboard' ? (
-            entries.length === 0 ? (
-              <p className="py-10 text-center text-sm text-slate-400">
-                Brak zapisanych wyników w rankingu. Rozegraj pierwszą partię po zalogowaniu!
-              </p>
-            ) : (
-              <div className="space-y-2">
-                <p className="pb-1 text-xs text-slate-400">
-                  Wyniki w rankingu globalnym są przeliczane na wspólną skalę 5 rund (maks. 25 000 pkt),
-                  dzięki czemu gry 3-, 5-, 10-, 15- i 20-rundowe są uczciwie porównywalne.
-                </p>
-                {entries.map((entry, index) => {
-                  const isCurrentUser = player?.uid === entry.uid;
-                  return (
-                    <div
-                      key={entry.uid}
-                      className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
-                        isCurrentUser
-                          ? 'border-emerald-500/45 bg-emerald-950/35'
-                          : 'border-white/5 bg-[#0C131D]'
-                      }`}
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md font-mono text-xs font-bold tabular-nums ${
-                            index === 0
-                              ? 'bg-amber-400 text-[#090E14]'
-                              : index === 1
-                                ? 'bg-slate-300 text-[#090E14]'
-                                : index === 2
-                                  ? 'bg-amber-700 text-white'
-                                  : 'bg-slate-800 text-slate-300'
-                          }`}
-                        >
-                          {index + 1}
-                        </span>
-
-                        {entry.photoUrl ? (
-                          <img
-                            src={entry.photoUrl}
-                            alt={entry.playerName}
-                            referrerPolicy="no-referrer"
-                            className="h-8 w-8 shrink-0 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xs font-bold text-emerald-300">
-                            {entry.playerName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-white">
-                            {entry.playerName}
-                            {isCurrentUser && (
-                              <span className="ml-2 text-xs font-normal text-emerald-400">(Ty)</span>
-                            )}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            Gier: {entry.gamesPlayed} · śr. błąd {formatDistanceKm(entry.averageDistanceKm)}
-                            {entry.timedMode ? ' · 60 s' : ''}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 text-right">
-                        <p className="font-mono text-base font-bold text-emerald-400 tabular-nums">
-                          {entry.bestScore.toLocaleString('pl-PL')} pkt
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )
           ) : history.length === 0 ? (
             <p className="py-10 text-center text-sm text-slate-400">
               Nie masz jeszcze zapisanych gier na tym koncie. Ukończ pierwszą rozgrywkę, aby zapisać wynik!
@@ -407,3 +467,4 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
     </div>
   );
 };
+

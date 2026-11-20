@@ -261,6 +261,48 @@ export interface DailyLeaderboardEntry {
   readonly createdAtIso: string;
 }
 
+export type RankingPlayerType = 'guest' | 'authenticated';
+
+export type RankingPlayerFilter = 'all' | 'guest' | 'authenticated';
+
+export type RankingMode = 'standard' | 'daily';
+
+export interface UnifiedRankingEntry {
+  readonly id: string;
+  readonly playerType: RankingPlayerType;
+  readonly actorId: string;
+  readonly gameMode: RankingMode;
+  readonly dateKey: string;
+  readonly playerName: string;
+  readonly photoUrl: string;
+  readonly bestScore: number;
+  readonly rawScore: number;
+  readonly roundsCount: number;
+  readonly averageDistanceKm: number;
+  readonly gamesPlayed: number;
+  readonly timedMode: boolean;
+  readonly createdAtIso: string;
+  readonly updatedAtIso: string;
+}
+
+export interface GuestRankingSubmissionInput {
+  readonly guestClientId: string;
+  readonly nickname: string;
+  readonly gameMode: RankingMode;
+  readonly dailyDateKey: string | null;
+  readonly totalScore: number;
+  readonly roundsCount: RoundCountOption;
+  readonly averageDistanceKm: number;
+  readonly timedMode: boolean;
+}
+
+export interface GuestRankingSaveResult {
+  readonly status: 'saved' | 'already_recorded_today' | 'offline_queued';
+  readonly entryId: string;
+  readonly nickname: string;
+  readonly normalizedScore: number;
+}
+
 export interface LocalDailyCompletion {
   readonly dateKey: string;
   readonly score: number;
@@ -346,6 +388,15 @@ export interface IGamePersistenceRepository {
   ): Promise<Result<DailyLeaderboardEntry | null, string>>;
   fetchPlayerHistory(uid: string, limitCount: number): Promise<Result<readonly StoredGameSummary[], string>>;
   flushOfflineOutbox(player: PlayerIdentity): Promise<number>;
+  saveGuestRanking(
+    input: GuestRankingSubmissionInput,
+  ): Promise<Result<GuestRankingSaveResult, string>>;
+  fetchUnifiedRankings(
+    mode: RankingMode,
+    dateKey: string | null,
+    limitCount?: number,
+  ): Promise<Result<readonly UnifiedRankingEntry[], string>>;
+  flushOfflineGuestRankings(): Promise<number>;
 }
 
 export interface ILocationCatalogRepository {

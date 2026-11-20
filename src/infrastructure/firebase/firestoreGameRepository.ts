@@ -12,25 +12,61 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
+import {z} from 'zod';
 import {normalizeScoreToStandard5Rounds} from '../../domain/geoScoring';
+import {
+  STANDARD_DATE_KEY,
+  buildRankingDocumentId,
+  sanitizeRankingActorId,
+  sortUnifiedRankings,
+  validateGuestNickname,
+} from '../../domain/rankings';
 import type {
   DailyLeaderboardEntry,
   GameSyncStatus,
+  GuestRankingSaveResult,
+  GuestRankingSubmissionInput,
   IGamePersistenceRepository,
   LeaderboardEntry,
   PlayerIdentity,
+  RankingMode,
   Result,
   RoundCountOption,
   RoundOutcome,
   StoredGameSummary,
+  UnifiedRankingEntry,
 } from '../../domain/types';
+import {
+  enqueueOfflineGuestRanking,
+  listQueuedOfflineGuestRankings,
+  removeQueuedOfflineGuestRanking,
+  type QueuedGuestRanking,
+} from '../storage/guestProfileCache';
 import {
   enqueueOfflineGame,
   listQueuedOfflineGames,
   removeQueuedOfflineGame,
   type QueuedGamePayload,
 } from '../storage/indexedDbOutbox';
-import {OperationType, db, handleFirestoreError} from './firebaseClient';
+import {OperationType, auth, db, handleFirestoreError} from './firebaseClient';
+
+const RANKINGS_COLLECTION = 'rankings';
+
+const FirestoreRankingDocSchema = z.object({
+  id: z.string().min(1).max(128),
+  playerType: z.enum(['guest', 'authenticated']),
+  actorId: z.string().min(1).max(128),
+  gameMode: z.enum(['standard', 'daily']),
+  dateKey: z.string().min(3).max(10),
+  playerName: z.string().min(1).max(60),
+  photoUrl: z.string().max(500),
+  bestScore: z.number().int().min(0).max(25000),
+  rawScore: z.number().int().min(0).max(100000),
+  roundsCount: z.number().int().min(3).max(20),
+  averageDistanceKm: z.number().min(0).max(25000),
+  gamesPlayed: z.number().int().min(1).max(100000),
+  timedMode: z.boolean(),
+});
 
 function sanitizeName(name: string): string {
   const trimmed = name.trim();
@@ -236,6 +272,177 @@ async function persistPayloadToFirestore(
 
   if (payload.dailyDateKey) {
     await persistDailyLeaderboardIfFirst(player, payload);
+  }
+
+  await persistAuthenticatedUnifiedRanking(player, payload, normalizedBest, profileStats.gamesPlayed);
+}
+
+async function persistAuthenticatedUnifiedRanking(
+  player: PlayerIdentity,
+  payload: QueuedGamePayload,
+  normalizedScore: number,
+  profileGamesPlayed: number,
+): Promise<void> {
+  const isDaily = Boolean(payload.dailyDateKey) && payload.roundsCount === 5;
+  const gameMode: RankingMode = isDaily ? 'daily' : 'standard';
+  const dateKey = isDaily && payload.dailyDateKey ? payload.dailyDateKey : STANDARD_DATE_KEY;
+  const rankingId = buildRankingDocumentId('authenticated', player.uid, gameMode, dateKey);
+  const rankingPath = `${RANKINGS_COLLECTION}/${rankingId}`;
+  const rankingRef = doc(db, RANKINGS_COLLECTION, rankingId);
+
+  try {
+    const existingSnap = await getDoc(rankingRef);
+    if (isDaily && existingSnap.exists()) {
+      return;
+    }
+
+    const playerName = sanitizeName(payload.playerName);
+    const photoUrl = sanitizePhotoUrl(payload.photoUrl);
+    const rawScore = Math.max(0, Math.min(payload.roundsCount * 5000, Math.round(payload.totalScore)));
+    const avgDist = Math.max(0, Math.min(25000, Math.round(payload.averageDistanceKm * 10) / 10));
+
+    if (!existingSnap.exists()) {
+      await setDoc(rankingRef, {
+        id: rankingId,
+        playerType: 'authenticated',
+        actorId: player.uid,
+        gameMode,
+        dateKey,
+        playerName,
+        photoUrl,
+        bestScore: normalizedScore,
+        rawScore,
+        roundsCount: payload.roundsCount,
+        averageDistanceKm: avgDist,
+        gamesPlayed: isDaily ? 1 : Math.max(1, profileGamesPlayed),
+        timedMode: payload.timedMode,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      return;
+    }
+
+    const prev = existingSnap.data();
+    const prevBest = typeof prev.bestScore === 'number' ? prev.bestScore : 0;
+    const prevGames = typeof prev.gamesPlayed === 'number' ? prev.gamesPlayed : 1;
+    const isNewRecord = normalizedScore >= prevBest;
+
+    await updateDoc(rankingRef, {
+      playerName,
+      photoUrl,
+      bestScore: isNewRecord ? normalizedScore : prevBest,
+      rawScore: isNewRecord
+        ? rawScore
+        : typeof prev.rawScore === 'number'
+          ? prev.rawScore
+          : rawScore,
+      roundsCount: isNewRecord
+        ? payload.roundsCount
+        : typeof prev.roundsCount === 'number'
+          ? prev.roundsCount
+          : payload.roundsCount,
+      averageDistanceKm: isNewRecord
+        ? avgDist
+        : typeof prev.averageDistanceKm === 'number'
+          ? prev.averageDistanceKm
+          : avgDist,
+      gamesPlayed: Math.max(prevGames + 1, profileGamesPlayed),
+      timedMode: isNewRecord ? payload.timedMode : Boolean(prev.timedMode),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error: unknown) {
+    if (isOfflineNetworkError(error)) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.WRITE, rankingPath);
+  }
+}
+
+async function persistGuestRankingPayload(
+  input: GuestRankingSubmissionInput,
+): Promise<GuestRankingSaveResult> {
+  const safeActorId = sanitizeRankingActorId(input.guestClientId);
+  const isDaily = input.gameMode === 'daily' && Boolean(input.dailyDateKey);
+  const gameMode: RankingMode = isDaily ? 'daily' : 'standard';
+  const dateKey = isDaily && input.dailyDateKey ? input.dailyDateKey : STANDARD_DATE_KEY;
+  const rankingId = buildRankingDocumentId('guest', safeActorId, gameMode, dateKey);
+  const rankingPath = `${RANKINGS_COLLECTION}/${rankingId}`;
+  const rankingRef = doc(db, RANKINGS_COLLECTION, rankingId);
+
+  const normalizedScore = normalizeScoreToStandard5Rounds(input.totalScore, input.roundsCount);
+  const rawScore = Math.max(0, Math.min(input.roundsCount * 5000, Math.round(input.totalScore)));
+  const avgDist = Math.max(0, Math.min(25000, Math.round(input.averageDistanceKm * 10) / 10));
+
+  try {
+    const existingSnap = await getDoc(rankingRef);
+    if (isDaily && existingSnap.exists()) {
+      return {
+        status: 'already_recorded_today',
+        entryId: rankingId,
+        nickname: input.nickname,
+        normalizedScore,
+      };
+    }
+
+    if (!existingSnap.exists()) {
+      await setDoc(rankingRef, {
+        id: rankingId,
+        playerType: 'guest',
+        actorId: safeActorId,
+        gameMode,
+        dateKey,
+        playerName: input.nickname,
+        photoUrl: '',
+        bestScore: normalizedScore,
+        rawScore,
+        roundsCount: input.roundsCount,
+        averageDistanceKm: avgDist,
+        gamesPlayed: 1,
+        timedMode: input.timedMode,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const prev = existingSnap.data();
+      const prevBest = typeof prev.bestScore === 'number' ? prev.bestScore : 0;
+      const prevGames = typeof prev.gamesPlayed === 'number' ? prev.gamesPlayed : 1;
+      const isNewRecord = normalizedScore >= prevBest;
+
+      await updateDoc(rankingRef, {
+        playerName: input.nickname,
+        bestScore: isNewRecord ? normalizedScore : prevBest,
+        rawScore: isNewRecord
+          ? rawScore
+          : typeof prev.rawScore === 'number'
+            ? prev.rawScore
+            : rawScore,
+        roundsCount: isNewRecord
+          ? input.roundsCount
+          : typeof prev.roundsCount === 'number'
+            ? prev.roundsCount
+            : input.roundsCount,
+        averageDistanceKm: isNewRecord
+          ? avgDist
+          : typeof prev.averageDistanceKm === 'number'
+            ? prev.averageDistanceKm
+            : avgDist,
+        gamesPlayed: Math.min(100000, prevGames + 1),
+        timedMode: isNewRecord ? input.timedMode : Boolean(prev.timedMode),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    return {
+      status: 'saved',
+      entryId: rankingId,
+      nickname: input.nickname,
+      normalizedScore,
+    };
+  } catch (error: unknown) {
+    if (isOfflineNetworkError(error)) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.WRITE, rankingPath);
   }
 }
 
@@ -465,6 +672,233 @@ export class FirestoreGameRepository implements IGamePersistenceRepository {
         return {ok: false, error: 'Tryb offline — historia z chmury pojawi się po odzyskaniu sieci.'};
       }
       handleFirestoreError(error, OperationType.LIST, path);
+    }
+  }
+
+  async saveGuestRanking(
+    input: GuestRankingSubmissionInput,
+  ): Promise<Result<GuestRankingSaveResult, string>> {
+    if (!VALID_ROUND_COUNTS.has(input.roundsCount)) {
+      return {
+        ok: false,
+        error: 'Nieobsługiwana liczba rund do zapisu w rankingu.',
+      };
+    }
+
+    const validatedNick = validateGuestNickname(input.nickname);
+    if (!validatedNick.ok) {
+      return {ok: false, error: validatedNick.error};
+    }
+
+    const cleanInput: GuestRankingSubmissionInput = {
+      ...input,
+      guestClientId: sanitizeRankingActorId(input.guestClientId),
+      nickname: validatedNick.value,
+      totalScore: Math.max(0, Math.min(input.roundsCount * 5000, Math.round(input.totalScore))),
+      averageDistanceKm: Math.max(0, Math.min(25000, Math.round(input.averageDistanceKm * 10) / 10)),
+    };
+
+    const normalizedScore = normalizeScoreToStandard5Rounds(
+      cleanInput.totalScore,
+      cleanInput.roundsCount,
+    );
+    const isDaily = cleanInput.gameMode === 'daily' && Boolean(cleanInput.dailyDateKey);
+    const dateKey = isDaily && cleanInput.dailyDateKey ? cleanInput.dailyDateKey : STANDARD_DATE_KEY;
+    const entryId = buildRankingDocumentId('guest', cleanInput.guestClientId, cleanInput.gameMode, dateKey);
+
+    const queueItem: QueuedGuestRanking = {
+      queueKey: `${entryId}_${Date.now()}`,
+      guestClientId: cleanInput.guestClientId,
+      nickname: cleanInput.nickname,
+      gameMode: cleanInput.gameMode,
+      dailyDateKey: isDaily ? dateKey : null,
+      totalScore: cleanInput.totalScore,
+      roundsCount: cleanInput.roundsCount,
+      averageDistanceKm: cleanInput.averageDistanceKm,
+      timedMode: cleanInput.timedMode,
+      queuedAtIso: new Date().toISOString(),
+    };
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const queued = await enqueueOfflineGuestRanking(queueItem);
+      return queued
+        ? {
+            ok: true,
+            value: {
+              status: 'offline_queued',
+              entryId,
+              nickname: cleanInput.nickname,
+              normalizedScore,
+            },
+          }
+        : {ok: false, error: 'Brak sieci i nie udało się zapisać wyniku w pamięci offline.'};
+    }
+
+    try {
+      const result = await persistGuestRankingPayload(cleanInput);
+      return {ok: true, value: result};
+    } catch (error: unknown) {
+      if (isOfflineNetworkError(error)) {
+        const queued = await enqueueOfflineGuestRanking(queueItem);
+        if (queued) {
+          return {
+            ok: true,
+            value: {
+              status: 'offline_queued',
+              entryId,
+              nickname: cleanInput.nickname,
+              normalizedScore,
+            },
+          };
+        }
+      }
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Nie udało się zapisać wyniku gościa w bazie Firebase.',
+      };
+    }
+  }
+
+  async flushOfflineGuestRankings(): Promise<number> {
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return 0;
+    }
+    if (auth.currentUser !== null) {
+      return 0;
+    }
+    const items = await listQueuedOfflineGuestRankings();
+    let synced = 0;
+    for (const item of items) {
+      try {
+        await persistGuestRankingPayload({
+          guestClientId: item.guestClientId,
+          nickname: item.nickname,
+          gameMode: item.gameMode,
+          dailyDateKey: item.dailyDateKey,
+          totalScore: item.totalScore,
+          roundsCount: item.roundsCount,
+          averageDistanceKm: item.averageDistanceKm,
+          timedMode: item.timedMode,
+        });
+        await removeQueuedOfflineGuestRanking(item.queueKey);
+        synced += 1;
+      } catch {
+        break;
+      }
+    }
+    return synced;
+  }
+
+  async fetchUnifiedRankings(
+    mode: RankingMode,
+    dateKey: string | null,
+    limitCount = 60,
+  ): Promise<Result<readonly UnifiedRankingEntry[], string>> {
+    const targetDateKey = mode === 'daily' && dateKey ? dateKey : STANDARD_DATE_KEY;
+    try {
+      const q = query(
+        collection(db, RANKINGS_COLLECTION),
+        where('dateKey', '==', targetDateKey),
+        limit(150),
+      );
+      const snapshot = await getDocs(q);
+      const entriesById = new Map<string, UnifiedRankingEntry>();
+      const authenticatedActors = new Set<string>();
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const parsed = FirestoreRankingDocSchema.safeParse(data);
+        if (!parsed.success || parsed.data.gameMode !== mode) {
+          return;
+        }
+        const entry: UnifiedRankingEntry = {
+          id: parsed.data.id,
+          playerType: parsed.data.playerType,
+          actorId: parsed.data.actorId,
+          gameMode: parsed.data.gameMode,
+          dateKey: parsed.data.dateKey,
+          playerName: parsed.data.playerName,
+          photoUrl: parsed.data.photoUrl,
+          bestScore: parsed.data.bestScore,
+          rawScore: parsed.data.rawScore,
+          roundsCount: parsed.data.roundsCount,
+          averageDistanceKm: parsed.data.averageDistanceKm,
+          gamesPlayed: parsed.data.gamesPlayed,
+          timedMode: parsed.data.timedMode,
+          createdAtIso: timestampToIso(data.createdAt),
+          updatedAtIso: timestampToIso(data.updatedAt),
+        };
+        entriesById.set(entry.id, entry);
+        if (entry.playerType === 'authenticated') {
+          authenticatedActors.add(entry.actorId);
+        }
+      });
+
+      // Backwards-compatible merge of legacy authenticated records not yet mirrored into /rankings
+      if (mode === 'standard') {
+        const legacyRes = await this.fetchLeaderboard(30).catch(() => null);
+        if (legacyRes && legacyRes.ok) {
+          for (const legacy of legacyRes.value) {
+            if (!authenticatedActors.has(legacy.uid)) {
+              const syntheticId = buildRankingDocumentId('authenticated', legacy.uid, 'standard', STANDARD_DATE_KEY);
+              entriesById.set(syntheticId, {
+                id: syntheticId,
+                playerType: 'authenticated',
+                actorId: legacy.uid,
+                gameMode: 'standard',
+                dateKey: STANDARD_DATE_KEY,
+                playerName: legacy.playerName,
+                photoUrl: legacy.photoUrl,
+                bestScore: legacy.bestScore,
+                rawScore: legacy.bestScore,
+                roundsCount: 5,
+                averageDistanceKm: legacy.averageDistanceKm,
+                gamesPlayed: legacy.gamesPlayed,
+                timedMode: legacy.timedMode,
+                createdAtIso: legacy.updatedAtIso,
+                updatedAtIso: legacy.updatedAtIso,
+              });
+            }
+          }
+        }
+      } else if (dateKey) {
+        const legacyDailyRes = await this.fetchDailyLeaderboard(dateKey, 30).catch(() => null);
+        if (legacyDailyRes && legacyDailyRes.ok) {
+          for (const legacy of legacyDailyRes.value) {
+            if (!authenticatedActors.has(legacy.uid)) {
+              const syntheticId = buildRankingDocumentId('authenticated', legacy.uid, 'daily', dateKey);
+              entriesById.set(syntheticId, {
+                id: syntheticId,
+                playerType: 'authenticated',
+                actorId: legacy.uid,
+                gameMode: 'daily',
+                dateKey,
+                playerName: legacy.playerName,
+                photoUrl: legacy.photoUrl,
+                bestScore: legacy.score,
+                rawScore: legacy.score,
+                roundsCount: 5,
+                averageDistanceKm: legacy.averageDistanceKm,
+                gamesPlayed: 1,
+                timedMode: legacy.timedMode,
+                createdAtIso: legacy.createdAtIso,
+                updatedAtIso: legacy.createdAtIso,
+              });
+            }
+          }
+        }
+      }
+
+      const sorted = sortUnifiedRankings(Array.from(entriesById.values()));
+      return {ok: true, value: sorted.slice(0, limitCount)};
+    } catch (error: unknown) {
+      if (isOfflineNetworkError(error)) {
+        return {ok: false, error: 'Tryb offline — tabela rankingów wymaga połączenia z internetem.'};
+      }
+      handleFirestoreError(error, OperationType.LIST, RANKINGS_COLLECTION);
     }
   }
 }

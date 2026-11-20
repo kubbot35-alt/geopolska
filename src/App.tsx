@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useReducer, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useReducer, useRef, useState} from 'react';
 import {onAuthStateChanged} from 'firebase/auth';
 import {GameHud} from './components/game/GameHud';
 import {HintPanel} from './components/game/HintPanel';
@@ -8,6 +8,7 @@ import {SummaryScreen} from './components/game/SummaryScreen';
 import {TitleScreen} from './components/game/TitleScreen';
 import {ZoomPanPhotoViewer} from './components/game/ZoomPanPhotoViewer';
 import {ChallengeGeneratorModal} from './components/modals/ChallengeGeneratorModal';
+import {GuestNicknameModal} from './components/modals/GuestNicknameModal';
 import {
   LeaderboardHistoryModal,
   type LeaderboardModalTab,
@@ -49,6 +50,11 @@ import {
   readLocalDailyCompletion,
   writeLocalDailyCompletion,
 } from './infrastructure/storage/dailyLocalCache';
+import {
+  getOrCreateGuestClientId,
+  readRememberedGuestNickname,
+  writeRememberedGuestNickname,
+} from './infrastructure/storage/guestProfileCache';
 
 export default function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, () => createInitialGameState(false));
@@ -67,6 +73,15 @@ export default function App() {
   const [locationsCatalog, setLocationsCatalog] = useState<readonly PolandLocation[]>(POLAND_LOCATIONS);
   const [catalogState, setCatalogState] = useState<LocationCatalogState>({status: 'loading'});
 
+  const guestClientId = useMemo(() => getOrCreateGuestClientId(), []);
+  const [rememberedGuestNick, setRememberedGuestNick] = useState<string>(() =>
+    readRememberedGuestNickname(),
+  );
+  const [guestPromptOpen, setGuestPromptOpen] = useState(false);
+  const [guestSubmitting, setGuestSubmitting] = useState(false);
+  const [guestSubmitError, setGuestSubmitError] = useState<string | null>(null);
+  const [guestSavedNickname, setGuestSavedNickname] = useState<string | null>(null);
+
   const todayDateKey = getWarsawDateKey();
   const [dailyCompletion, setDailyCompletion] = useState<LocalDailyCompletion | null>(() =>
     readLocalDailyCompletion(todayDateKey),
@@ -74,6 +89,7 @@ export default function App() {
 
   const isOnline = useOnlineStatus();
   const savedSummaryKeyRef = useRef<string | null>(null);
+  const promptedSummaryKeyRef = useRef<string | null>(null);
   const prevPhaseStatusRef = useRef<string>(state.status);
 
   const syncLocationsFromCloud = useCallback(
@@ -157,10 +173,15 @@ export default function App() {
     };
   }, [player, isOnline, todayDateKey]);
 
-  // Flush IndexedDB offline outbox whenever network returns while signed in
+  // Flush IndexedDB offline outbox whenever network returns (authenticated or guest)
   useEffect(() => {
-    if (isOnline && player) {
+    if (!isOnline) {
+      return;
+    }
+    if (player) {
       void gameRepository.flushOfflineOutbox(player);
+    } else {
+      void gameRepository.flushOfflineGuestRankings();
     }
   }, [isOnline, player]);
 
@@ -201,6 +222,10 @@ export default function App() {
   useEffect(() => {
     if (state.status !== 'SUMMARY') {
       savedSummaryKeyRef.current = null;
+      promptedSummaryKeyRef.current = null;
+      setGuestPromptOpen(false);
+      setGuestSubmitError(null);
+      setGuestSavedNickname(null);
       return;
     }
 
@@ -218,11 +243,19 @@ export default function App() {
     const summaryKey = `${state.gameMode}_${state.dailyDateKey ?? 'std'}_${state.completedRounds.map((r) => r.location.id).join('_')}_${state.totalScore}`;
 
     if (!player) {
-      if (state.syncStatus !== 'guest') {
+      if (state.syncStatus === 'idle') {
         dispatch({type: 'SET_SYNC_STATUS', syncStatus: 'guest'});
+      }
+      if (promptedSummaryKeyRef.current !== summaryKey) {
+        promptedSummaryKeyRef.current = summaryKey;
+        setGuestSubmitError(null);
+        setGuestPromptOpen(true);
       }
       return;
     }
+
+    // Close guest modal automatically if player signed in with Google on the summary screen
+    setGuestPromptOpen(false);
 
     if (savedSummaryKeyRef.current === `${player.uid}_${summaryKey}`) {
       return;
@@ -376,6 +409,55 @@ export default function App() {
     setIsMuted(next);
   }, [isMuted]);
 
+  const handleSubmitGuestNickname = useCallback(
+    async (nickname: string) => {
+      if (state.status !== 'SUMMARY') {
+        return;
+      }
+      setGuestSubmitting(true);
+      setGuestSubmitError(null);
+      dispatch({type: 'SET_SYNC_STATUS', syncStatus: 'saving'});
+
+      writeRememberedGuestNickname(nickname);
+      setRememberedGuestNick(nickname);
+
+      const res = await gameRepository.saveGuestRanking({
+        guestClientId,
+        nickname,
+        gameMode: state.gameMode === 'daily' ? 'daily' : 'standard',
+        dailyDateKey: state.gameMode === 'daily' ? state.dailyDateKey : null,
+        totalScore: state.totalScore,
+        roundsCount: state.selectedRoundCount,
+        averageDistanceKm: state.averageDistanceKm,
+        timedMode: state.timedMode,
+      });
+
+      setGuestSubmitting(false);
+
+      if (!res.ok) {
+        setGuestSubmitError(res.error);
+        dispatch({type: 'SET_SYNC_STATUS', syncStatus: 'error', syncMessage: res.error});
+        return;
+      }
+
+      setGuestSavedNickname(res.value.nickname);
+      if (res.value.status === 'offline_queued') {
+        dispatch({type: 'SET_SYNC_STATUS', syncStatus: 'offline_queued', syncMessage: null});
+      } else if (res.value.status === 'already_recorded_today') {
+        dispatch({
+          type: 'SET_SYNC_STATUS',
+          syncStatus: 'saved',
+          syncMessage:
+            'Dzisiejszy oficjalny wynik Wyzwania Dnia z tej przeglądarki został już wcześniej zapisany (liczy się pierwsza próba).',
+        });
+      } else {
+        dispatch({type: 'SET_SYNC_STATUS', syncStatus: 'saved', syncMessage: null});
+      }
+      setGuestPromptOpen(false);
+    },
+    [guestClientId, state],
+  );
+
   // Global keyboard shortcuts (Enter/Space for game flow, Escape for modals)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -390,6 +472,7 @@ export default function App() {
       }
 
       if (e.key === 'Escape') {
+        if (guestPromptOpen && !guestSubmitting) setGuestPromptOpen(false);
         if (leaderboardOpen) setLeaderboardOpen(false);
         if (challengeCreatorOpen) setChallengeCreatorOpen(false);
         if (locationDbOpen) setLocationDbOpen(false);
@@ -397,7 +480,13 @@ export default function App() {
         return;
       }
 
-      if (leaderboardOpen || challengeCreatorOpen || locationDbOpen || videoStudioOpen) {
+      if (
+        guestPromptOpen ||
+        leaderboardOpen ||
+        challengeCreatorOpen ||
+        locationDbOpen ||
+        videoStudioOpen
+      ) {
         return;
       }
 
@@ -420,6 +509,8 @@ export default function App() {
   }, [
     handleStartGame,
     handleSubmitGuess,
+    guestPromptOpen,
+    guestSubmitting,
     leaderboardOpen,
     challengeCreatorOpen,
     locationDbOpen,
@@ -539,20 +630,44 @@ export default function App() {
           mapStyle={mapStyle}
           onChangeMapStyle={setMapStyle}
           player={player}
+          guestSavedNickname={guestSavedNickname}
           onPlayAgain={handleStartGame}
           onReturnToMenu={() => dispatch({type: 'RETURN_TO_TITLE'})}
           onOpenLeaderboard={handleOpenLeaderboard}
+          onOpenGuestNicknameModal={() => {
+            setGuestSubmitError(null);
+            setGuestPromptOpen(true);
+          }}
           onSignIn={() => void handleSignIn()}
         />
       )}
 
       {/* Modals */}
+      {state.status === 'SUMMARY' && (
+        <GuestNicknameModal
+          open={guestPromptOpen && !player}
+          onClose={() => setGuestPromptOpen(false)}
+          gameMode={state.gameMode}
+          dailyDateKey={state.dailyDateKey}
+          totalScore={state.totalScore}
+          roundsCount={state.selectedRoundCount}
+          averageDistanceKm={state.averageDistanceKm}
+          timedMode={state.timedMode}
+          initialNickname={rememberedGuestNick}
+          submitting={guestSubmitting}
+          error={guestSubmitError}
+          onSubmitGuestNickname={handleSubmitGuestNickname}
+          onSignInWithGoogle={() => void handleSignIn()}
+        />
+      )}
+
       <LeaderboardHistoryModal
         open={leaderboardOpen}
         initialTab={leaderboardTab}
         onClose={() => setLeaderboardOpen(false)}
         repository={gameRepository}
         player={player}
+        guestClientId={guestClientId}
         onSignIn={() => void handleSignIn()}
       />
 

@@ -401,6 +401,107 @@
       "required": [
         "uid"
       ]
+    },
+    "UnifiedRankingEntry": {
+      "title": "UnifiedRankingEntry",
+      "description": "Unified public GeoPolska ranking record supporting both Google-authenticated players and unauthenticated guests with separate records for standard mode and Daily Challenge (zero PII).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Deterministic document ID matching {prefix}_{actorId}_{modeSuffix}."
+        },
+        "playerType": {
+          "type": "string",
+          "enum": ["guest", "authenticated"],
+          "description": "Whether the record belongs to an unauthenticated guest or a verified Google user."
+        },
+        "actorId": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID for authenticated users or persistent browser guestClientId for guests."
+        },
+        "gameMode": {
+          "type": "string",
+          "enum": ["standard", "daily"],
+          "description": "Ranking category: standard mode (including custom decks) or official Daily Challenge."
+        },
+        "dateKey": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 10,
+          "pattern": "^(all|[0-9]{4}-[0-9]{2}-[0-9]{2})$",
+          "description": "'all' for standard mode or Polish calendar date 'YYYY-MM-DD' for Daily Challenge."
+        },
+        "playerName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60,
+          "description": "Public nickname (2..30 chars for guests, 1..60 chars for Google accounts)."
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Public Google avatar URL for authenticated users, empty string for guests."
+        },
+        "bestScore": {
+          "type": "integer",
+          "description": "Normalized 5-round best score (0 to 25000)."
+        },
+        "rawScore": {
+          "type": "integer",
+          "description": "Raw match score (0 to roundsCount * 5000, max 100000)."
+        },
+        "roundsCount": {
+          "type": "integer",
+          "enum": [3, 5, 10, 15, 20],
+          "description": "Rounds count of the recorded run."
+        },
+        "averageDistanceKm": {
+          "type": "number",
+          "description": "Mean Haversine error in kilometers for the best run."
+        },
+        "gamesPlayed": {
+          "type": "integer",
+          "description": "Total recorded games in this mode for this actor."
+        },
+        "timedMode": {
+          "type": "boolean",
+          "description": "Whether the 60-second timer was active on the best run."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Immutable server timestamp of initial ranking creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest record update."
+        }
+      },
+      "required": [
+        "id",
+        "playerType",
+        "actorId",
+        "gameMode",
+        "dateKey",
+        "playerName",
+        "photoUrl",
+        "bestScore",
+        "rawScore",
+        "roundsCount",
+        "averageDistanceKm",
+        "gamesPlayed",
+        "timedMode",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -420,13 +521,19 @@
       "schema": {
         "$ref": "#/entities/LeaderboardEntry"
       },
-      "description": "Public global leaderboard keyed by player UID with zero PII."
+      "description": "Legacy public global leaderboard keyed by player UID with zero PII."
     },
     "/dailyLeaderboard/{entryId}": {
       "schema": {
         "$ref": "#/entities/DailyLeaderboardEntry"
       },
-      "description": "Immutable daily leaderboard entries keyed as {YYYY-MM-DD}_{uid} with zero PII."
+      "description": "Legacy immutable daily leaderboard entries keyed as {YYYY-MM-DD}_{uid} with zero PII."
+    },
+    "/rankings/{rankingId}": {
+      "schema": {
+        "$ref": "#/entities/UnifiedRankingEntry"
+      },
+      "description": "Unified public rankings table supporting both Google-authenticated users and unauthenticated guests, split by standard vs daily mode."
     },
     "/locations/{locationId}": {
       "schema": {
