@@ -1,0 +1,450 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private player profile tracking cumulative GeoPolska statistics.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Authentication UID."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Player display name."
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional avatar URL."
+        },
+        "gamesPlayed": {
+          "type": "integer",
+          "description": "Total completed games."
+        },
+        "bestScore": {
+          "type": "integer",
+          "description": "Highest achieved normalized 5-round score (0 to 25000)."
+        },
+        "totalScore": {
+          "type": "integer",
+          "description": "Cumulative score across all completed games."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of profile creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest profile update."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "photoUrl",
+        "gamesPlayed",
+        "bestScore",
+        "totalScore",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "GameRecord": {
+      "title": "GameRecord",
+      "description": "Immutable completed GeoPolska match history record (3, 5, 10, 15, or 20 rounds) owned by a player.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner UID."
+        },
+        "playerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Player display name at match completion."
+        },
+        "totalScore": {
+          "type": "integer",
+          "description": "Total match score (0 to roundsCount * 5000, max 100000)."
+        },
+        "averageDistanceKm": {
+          "type": "number",
+          "description": "Mean Haversine distance error in kilometers."
+        },
+        "timedMode": {
+          "type": "boolean",
+          "description": "Whether the 60-second timer was enabled."
+        },
+        "roundsCount": {
+          "type": "integer",
+          "enum": [3, 5, 10, 15, 20],
+          "description": "Number of rounds completed (3, 5, 10, 15, or 20)."
+        },
+        "roundLocations": {
+          "type": "array",
+          "description": "Bounded list of visited city names matching roundsCount (max 20)."
+        },
+        "roundScores": {
+          "type": "array",
+          "description": "Bounded list of round scores matching roundsCount (max 20)."
+        },
+        "roundDistances": {
+          "type": "array",
+          "description": "Bounded list of round distances in km matching roundsCount (max 20)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of match completion."
+        }
+      },
+      "required": [
+        "uid",
+        "playerName",
+        "totalScore",
+        "averageDistanceKm",
+        "timedMode",
+        "roundsCount",
+        "roundLocations",
+        "roundScores",
+        "roundDistances",
+        "createdAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public best-score leaderboard record containing no PII (keyed by player UID).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Player UID matching document ID."
+        },
+        "playerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Public leaderboard nickname."
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Public avatar image URL."
+        },
+        "bestScore": {
+          "type": "integer",
+          "description": "Best verified 5-round score (0 to 25000)."
+        },
+        "averageDistanceKm": {
+          "type": "number",
+          "description": "Mean error in km for the best run."
+        },
+        "gamesPlayed": {
+          "type": "integer",
+          "description": "Total completed games count."
+        },
+        "timedMode": {
+          "type": "boolean",
+          "description": "Whether the best run used the 60s timer."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Initial leaderboard entry creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Latest record update timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "playerName",
+        "photoUrl",
+        "bestScore",
+        "averageDistanceKm",
+        "gamesPlayed",
+        "timedMode",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DailyLeaderboardEntry": {
+      "title": "DailyLeaderboardEntry",
+      "description": "Immutable official Daily Challenge leaderboard entry (one per player per Warsaw calendar day, zero PII).",
+      "type": "object",
+      "properties": {
+        "dateKey": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Polish calendar date key (YYYY-MM-DD)."
+        },
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Player UID."
+        },
+        "playerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Public leaderboard nickname."
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Public avatar image URL."
+        },
+        "score": {
+          "type": "integer",
+          "description": "Official 5-round Daily Challenge score (0 to 25000)."
+        },
+        "averageDistanceKm": {
+          "type": "number",
+          "description": "Mean Haversine error in km across the 5 daily rounds."
+        },
+        "timedMode": {
+          "type": "boolean",
+          "description": "Whether the 60-second timer was enabled."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of daily challenge completion."
+        }
+      },
+      "required": [
+        "dateKey",
+        "uid",
+        "playerName",
+        "photoUrl",
+        "score",
+        "averageDistanceKm",
+        "timedMode",
+        "createdAt"
+      ]
+    },
+    "LocationDocument": {
+      "title": "LocationDocument",
+      "description": "Public GeoPolska game location stored in Firestore with WGS84 coordinates, hint, fun fact, and category metadata (admin-writable, zero PII).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Canonical location slug matching document ID."
+        },
+        "catalogKey": {
+          "type": "string",
+          "enum": ["poland"],
+          "description": "Catalog partition key used for verified public list queries."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Display name of the Polish city or landmark."
+        },
+        "voivodeship": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Polish voivodeship name."
+        },
+        "lat": {
+          "type": "number",
+          "description": "WGS84 latitude within Poland bounds (48.5 to 55.5)."
+        },
+        "lng": {
+          "type": "number",
+          "description": "WGS84 longitude within Poland bounds (13.5 to 25.0)."
+        },
+        "imageUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Bundled local path, backend proxy URL, or HTTPS image URL."
+        },
+        "hint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Spoiler-free geographical clue."
+        },
+        "funFact": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600,
+          "description": "Educational fun fact revealed after guessing."
+        },
+        "regionCategory": {
+          "type": "string",
+          "enum": ["miasto", "gory", "morze", "zabytek", "nad_woda"],
+          "description": "Gameplay region category filter."
+        },
+        "isClassicOffline": {
+          "type": "boolean",
+          "description": "Whether this location belongs to the 20 offline-bundled classic scenes."
+        },
+        "orderIndex": {
+          "type": "integer",
+          "description": "Deterministic canonical sort index (0 to 100000) ensuring identical Daily Challenge decks across clients."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of location creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest location update."
+        }
+      },
+      "required": [
+        "id",
+        "catalogKey",
+        "name",
+        "voivodeship",
+        "lat",
+        "lng",
+        "imageUrl",
+        "hint",
+        "funFact",
+        "regionCategory",
+        "isClassicOffline",
+        "orderIndex",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CatalogMeta": {
+      "title": "CatalogMeta",
+      "description": "Lightweight version manifest document for quota-efficient IndexedDB cache invalidation (1 Firestore read on startup).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Catalog identifier matching document ID (e.g., poland)."
+        },
+        "version": {
+          "type": "integer",
+          "description": "Monotonically increasing catalog revision number (>= 1)."
+        },
+        "totalCount": {
+          "type": "integer",
+          "description": "Total number of active locations currently stored in /locations."
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the administrator who last updated the catalog."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of initial catalog creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest catalog revision."
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "totalCount",
+        "updatedBy",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminMarker": {
+      "title": "AdminMarker",
+      "description": "Server-managed administrator role marker document (never client-writable).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Administrator UID."
+        }
+      },
+      "required": [
+        "uid"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Owner-isolated player profile and cumulative statistics."
+    },
+    "/games/{gameId}": {
+      "schema": {
+        "$ref": "#/entities/GameRecord"
+      },
+      "description": "Append-only match history records queryable only by the owning player."
+    },
+    "/leaderboard/{userId}": {
+      "schema": {
+        "$ref": "#/entities/LeaderboardEntry"
+      },
+      "description": "Public global leaderboard keyed by player UID with zero PII."
+    },
+    "/dailyLeaderboard/{entryId}": {
+      "schema": {
+        "$ref": "#/entities/DailyLeaderboardEntry"
+      },
+      "description": "Immutable daily leaderboard entries keyed as {YYYY-MM-DD}_{uid} with zero PII."
+    },
+    "/locations/{locationId}": {
+      "schema": {
+        "$ref": "#/entities/LocationDocument"
+      },
+      "description": "Public Polish location atlas managed by verified administrators."
+    },
+    "/catalogMeta/{catalogId}": {
+      "schema": {
+        "$ref": "#/entities/CatalogMeta"
+      },
+      "description": "Single-document catalog version manifest enabling 1-read IndexedDB cache validation."
+    },
+    "/admins/{userId}": {
+      "schema": {
+        "$ref": "#/entities/AdminMarker"
+      },
+      "description": "Read-only owner check for delegated admin privileges; client writes forbidden."
+    }
+  }
+}

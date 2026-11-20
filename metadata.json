@@ -1,0 +1,8 @@
+{
+  "name": "GeoPolska",
+  "description": "Interaktywna gra geograficzna w stylu GeoGuessr osadzona wyłącznie w Polsce — z mapą Google Maps, sceną 3D Polski, dwupoziomowymi podpowiedziami, Eksploratorem AI Gemini oraz rankingiem globalnym Firebase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
