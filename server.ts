@@ -334,8 +334,8 @@ Przeanalizuj po polsku i wypunktuj 4 konkretne cechy wizualne, architektoniczne,
             return;
           }
           const patchedCode = transformed.code.replace(
-            'transport.connect(createHMRHandler(handleMessage));',
-            '/* HMR WebSocket disabled in proxied preview */',
+            /const transport = normalizeModuleRunnerTransport\(\(\(\) => \{[\s\S]*?\}\)\(\)\);/,
+            'const transport = normalizeModuleRunnerTransport({ connect() {}, disconnect() {}, send() {} });',
           );
           res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
           res.send(patchedCode);
