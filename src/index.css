@@ -50,6 +50,20 @@
   background: #33475e;
 }
 
+@keyframes geopolska-ken-burns {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1.06);
+  }
+}
+
+.geopolska-ken-burns {
+  animation: geopolska-ken-burns 10.5s linear forwards;
+  will-change: transform;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

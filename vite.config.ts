@@ -76,6 +76,20 @@ export default defineConfig(() => {
                 },
               },
             },
+            {
+              urlPattern: /\/api\/location-photo\/image/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'geopolska-location-photos-cache',
+                expiration: {
+                  maxEntries: 180,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [200],
+                },
+              },
+            },
           ],
         },
         devOptions: {

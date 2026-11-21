@@ -15,7 +15,7 @@ export const PWAInstallButton: React.FC = () => {
       <button
         type="button"
         onClick={() => void install()}
-        className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2 text-xs font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/25 whitespace-nowrap shrink-0"
+        className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-white/20 bg-[#0C0E12]/65 px-3.5 py-2 text-xs font-semibold text-neutral-100 transition-colors duration-200 hover:border-white/40 hover:bg-[#0C0E12]/85 whitespace-nowrap shrink-0"
       >
         <Download className="h-3.5 w-3.5" />
         Zainstaluj aplikację
@@ -29,9 +29,9 @@ export const PWAInstallButton: React.FC = () => {
         <button
           type="button"
           onClick={() => setShowIOSGuide(true)}
-          className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-slate-700 bg-[#101822] px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-800 whitespace-nowrap shrink-0"
+          className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-white/12 bg-[#0C0E12]/55 px-3.5 py-2 text-xs font-medium text-neutral-200 transition-colors duration-200 hover:border-white/30 hover:bg-[#0C0E12]/80 hover:text-white whitespace-nowrap shrink-0"
         >
-          <Download className="h-3.5 w-3.5 text-emerald-400" />
+          <Download className="h-3.5 w-3.5 text-neutral-300" />
           Zainstaluj (iOS)
         </button>
 

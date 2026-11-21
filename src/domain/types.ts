@@ -22,8 +22,6 @@ export type RoundCountOption = 3 | 5 | 10 | 15 | 20;
 
 export type GameMode = 'standard' | 'daily';
 
-export type ThreeCameraPreset = 'overview' | 'warszawa' | 'gdansk' | 'tatry';
-
 export interface PolandLocation {
   readonly id: string;
   readonly name: string;
