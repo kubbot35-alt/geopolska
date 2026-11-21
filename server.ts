@@ -316,14 +316,34 @@ Przeanalizuj po polsku i wypunktuj 4 konkretne cechy wizualne, architektoniczne,
 
   if (!IS_PROD) {
     const {createServer: createViteServer} = await import('vite');
-    const hmrConfig = process.env.DISABLE_HMR === 'true' ? false : {server: httpServer};
+    const enableHmr = process.env.ENABLE_HMR === 'true';
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: hmrConfig,
+        ws: enableHmr ? {server: httpServer} : false,
+        hmr: enableHmr ? {server: httpServer} : false,
       },
       appType: 'spa',
     });
+    if (!enableHmr) {
+      app.get('/@vite/client', async (_req: Request, res: Response, next) => {
+        try {
+          const transformed = await vite.transformRequest('/@vite/client');
+          if (!transformed) {
+            next();
+            return;
+          }
+          const patchedCode = transformed.code.replace(
+            'transport.connect(createHMRHandler(handleMessage));',
+            '/* HMR WebSocket disabled in proxied preview */',
+          );
+          res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+          res.send(patchedCode);
+        } catch (err) {
+          next(err);
+        }
+      });
+    }
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(__dirname, 'dist');

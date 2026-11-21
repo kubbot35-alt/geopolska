@@ -1,9 +1,10 @@
 # Poprawka: Błąd połączenia WebSocket Vite w trybie middleware Express (`server.ts`)
 
 **Data**: 2026-11-21
-**Problem**: Klient `@vite/client` zgłaszał błąd `Error: WebSocket closed without opened.`, ponieważ Vite uruchamiany w `server: { middlewareMode: true }` w `server.ts` nie miał podpiętego współdzielonego serwera HTTP na porcie 3000.
+**Problem**: W Vite 8 uruchamianym w `server: { middlewareMode: true }` klient `/@vite/client` bezwarunkowo wywoływał `transport.connect(...)` pod port `24678` (nieosiągalny przez reverse proxy portu 3000), powodując błąd `Error: WebSocket closed without opened.` w konsoli przeglądarki.
 
 ## Rozwiązanie
 
-- Utworzono jawny `http.createServer(app)` w `server.ts` i przekazano konfigurację `hmr: process.env.DISABLE_HMR === 'true' ? false : {server: httpServer}` do `createViteServer(...)`.
-- Gdy `DISABLE_HMR=true`, HMR pozostaje wyłączony bez prób otwierania WebSocket. Gdy HMR jest aktywny, połączenie WebSocket jest obsługiwane bezpośrednio na porcie 3000 zamiast nieosiągalnego osobnego portu.
+- W `server.ts` ustawiono `ws: false` oraz `hmr: false` w trybie middleware (z możliwością jawnego włączenia lokalnie przez `ENABLE_HMR=true`).
+- Gdy HMR jest wyłączony, trasa `GET /@vite/client` przed `vite.middlewares` pobiera przetransformowany moduł klienta z Vite i usuwa wywołanie startowe `transport.connect(createHMRHandler(handleMessage));`, zachowując wszystkie wymagane eksporty CSS/JS (`createHotContext`, `updateStyle`, `removeStyle`, `injectQuery`, `ErrorOverlay`).
+- Zweryfikowano odpowiedzią `curl http://localhost:3000/@vite/client`, kompilacją produkcyjną oraz sprawdzeniem typów TypeScript.
