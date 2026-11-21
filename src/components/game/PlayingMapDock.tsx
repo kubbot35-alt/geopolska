@@ -1,13 +1,11 @@
 import React, {useState} from 'react';
 import {Check, Map as MapIcon, MapPin, Maximize2, Minimize2, X} from 'lucide-react';
-import type {GeoCoordinate, MapStyleOption} from '../../domain/types';
-import {PolandGoogleMap} from '../map/PolandGoogleMap';
+import type {GeoCoordinate} from '../../domain/types';
+import {PolandMap} from '../map/PolandMap';
 
 export interface PlayingMapDockProps {
   readonly roundKey: string;
   readonly selectedGuess: GeoCoordinate | null;
-  readonly mapStyle: MapStyleOption;
-  readonly onChangeMapStyle: (style: MapStyleOption) => void;
   readonly onSelectGuess: (coord: GeoCoordinate) => void;
   readonly onSubmitGuess: () => void;
 }
@@ -15,8 +13,6 @@ export interface PlayingMapDockProps {
 export const PlayingMapDock: React.FC<PlayingMapDockProps> = ({
   roundKey,
   selectedGuess,
-  mapStyle,
-  onChangeMapStyle,
   onSelectGuess,
   onSubmitGuess,
 }) => {
@@ -61,9 +57,7 @@ export const PlayingMapDock: React.FC<PlayingMapDockProps> = ({
 
         {/* Interactive Free Poland Map */}
         <div className="relative flex-1">
-          <PolandGoogleMap
-            mapStyle={mapStyle}
-            onChangeMapStyle={onChangeMapStyle}
+          <PolandMap
             mode={{
               kind: 'guess',
               roundKey,
@@ -123,9 +117,7 @@ export const PlayingMapDock: React.FC<PlayingMapDockProps> = ({
           </div>
 
           <div className="relative flex-1">
-            <PolandGoogleMap
-              mapStyle={mapStyle}
-              onChangeMapStyle={onChangeMapStyle}
+            <PolandMap
               mode={{
                 kind: 'guess',
                 roundKey,

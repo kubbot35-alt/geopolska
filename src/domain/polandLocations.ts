@@ -1,7 +1,5 @@
 import rawCatalogData from '../data/polandLocationsCatalog.json';
 import type {
-  AiChallengeStop,
-  ChallengeCandidateSummary,
   LocationPoolFilter,
   PolandLocation,
   RegionCategory,
@@ -490,18 +488,6 @@ export function buildLocationPoolOptions(
 export const LOCATION_POOL_OPTIONS: readonly LocationPoolOption[] =
   buildLocationPoolOptions(POLAND_LOCATIONS);
 
-const REGION_VOIVODESHIPS_MAP: Readonly<Record<string, readonly string[]>> = {
-  'Cała Polska': [],
-  'Małopolska i Tatry': ['Małopolskie', 'Podkarpackie', 'Śląskie'],
-  'Pomorze i Bałtyk': ['Pomorskie', 'Zachodniopomorskie', 'Kujawsko-Pomorskie'],
-  'Dolny Śląsk i Karkonosze': ['Dolnośląskie', 'Opolskie', 'Lubuskie'],
-  'Mazowsze i Polska Centralna': ['Mazowieckie', 'Łódzkie', 'Wielkopolskie'],
-  'Lubelszczyzna i Roztocze': ['Lubelskie', 'Świętokrzyskie', 'Podkarpackie'],
-  'Warmia, Mazury i Podlasie': ['Warmińsko-Mazurskie', 'Podlaskie'],
-};
-
-export const CHALLENGE_REGIONS: readonly string[] = Object.keys(REGION_VOIVODESHIPS_MAP);
-
 export const POLISH_VOIVODESHIPS: readonly string[] = [
   'Dolnośląskie',
   'Kujawsko-Pomorskie',
@@ -520,107 +506,3 @@ export const POLISH_VOIVODESHIPS: readonly string[] = [
   'Wielkopolskie',
   'Zachodniopomorskie',
 ];
-
-/**
- * Selects up to `maxCandidates` verified Polish locations matching a region & theme keywords
- * for free-tier Gemini AI challenge curation. Pure & deterministic when seeded with a custom rng.
- */
-export function selectChallengeCandidates(
-  region: string,
-  themePrompt: string,
-  maxCandidates = 48,
-  rng: () => number = Math.random,
-  catalog: readonly PolandLocation[] = POLAND_LOCATIONS,
-): readonly ChallengeCandidateSummary[] {
-  const source = catalog.length > 0 ? catalog : POLAND_LOCATIONS;
-  const allowedVoivodeships = REGION_VOIVODESHIPS_MAP[region] ?? [];
-  const regionalPool =
-    allowedVoivodeships.length > 0
-      ? source.filter((loc) => allowedVoivodeships.includes(loc.voivodeship))
-      : source;
-
-  const basePool = regionalPool.length >= 12 ? regionalPool : source;
-  const lowerTheme = themePrompt.toLowerCase();
-
-  const preferredCategories = new Set<RegionCategory>();
-  if (/zamek|zamk|pałac|gotyk|twierdz|ruin|zabytek|renesans|klasztor/.test(lowerTheme)) {
-    preferredCategories.add('zabytek');
-  }
-  if (/gór|tatr|karkonosz|beskid|bieszczad|szczyt|przełęcz|sudet/.test(lowerTheme)) {
-    preferredCategories.add('gory');
-  }
-  if (/morz|bałtyk|plaż|latarni|klif|wybrzeż|port|mierze/.test(lowerTheme)) {
-    preferredCategories.add('morze');
-  }
-  if (/jezi|rzek|wisł|odr|mazur|woda|kanał|spływ/.test(lowerTheme)) {
-    preferredCategories.add('nad_woda');
-  }
-  if (/miast|rynek|starówk|kamienic|ratusz|metropoli/.test(lowerTheme)) {
-    preferredCategories.add('miasto');
-  }
-
-  const prioritized =
-    preferredCategories.size > 0
-      ? basePool.filter((loc) => preferredCategories.has(loc.regionCategory))
-      : [];
-  const secondary =
-    preferredCategories.size > 0
-      ? basePool.filter((loc) => !preferredCategories.has(loc.regionCategory))
-      : [...basePool];
-
-  const shuffle = (items: readonly PolandLocation[]): PolandLocation[] => {
-    const copy = [...items];
-    for (let i = copy.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(rng() * (i + 1));
-      const tmp = copy[i];
-      copy[i] = copy[j];
-      copy[j] = tmp;
-    }
-    return copy;
-  };
-
-  const combined = [...shuffle(prioritized), ...shuffle(secondary)].slice(0, maxCandidates);
-  return combined.map((loc) => ({
-    id: loc.id,
-    name: loc.name,
-    voivodeship: loc.voivodeship,
-    regionCategory: loc.regionCategory,
-  }));
-}
-
-/**
- * Resolves AI-selected stop IDs back to verified PolandLocation entities with real photos & WGS84 coords.
- * Applies custom AI detective clues when they are non-empty and do not leak the location name.
- */
-export function hydrateChallengeDeck(
-  stops: readonly AiChallengeStop[],
-  catalog: readonly PolandLocation[] = POLAND_LOCATIONS,
-): readonly PolandLocation[] {
-  const source = catalog.length > 0 ? catalog : POLAND_LOCATIONS;
-  const locationById = new Map<string, PolandLocation>(source.map((loc) => [loc.id, loc]));
-  const seen = new Set<string>();
-  const deck: PolandLocation[] = [];
-
-  for (const stop of stops) {
-    if (seen.has(stop.locationId)) {
-      continue;
-    }
-    const base = locationById.get(stop.locationId);
-    if (!base) {
-      continue;
-    }
-    seen.add(base.id);
-    const cleanedClue = stop.customClue.trim();
-    const leaksName =
-      cleanedClue.length > 0 &&
-      cleanedClue.toLowerCase().includes(base.name.toLowerCase());
-    deck.push({
-      ...base,
-      hint: cleanedClue.length >= 20 && !leaksName ? cleanedClue : base.hint,
-    });
-  }
-
-  return deck;
-}
-
-

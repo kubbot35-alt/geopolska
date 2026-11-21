@@ -21,11 +21,10 @@ import {
 import type {
   GameMode,
   GameSyncStatus,
-  MapStyleOption,
   PlayerIdentity,
   RoundOutcome,
 } from '../../domain/types';
-import {PolandGoogleMap} from '../map/PolandGoogleMap';
+import {PolandMap} from '../map/PolandMap';
 
 export interface SummaryScreenProps {
   readonly gameMode: GameMode;
@@ -36,8 +35,6 @@ export interface SummaryScreenProps {
   readonly timedMode: boolean;
   readonly syncStatus: GameSyncStatus;
   readonly syncMessage: string | null;
-  readonly mapStyle: MapStyleOption;
-  readonly onChangeMapStyle: (style: MapStyleOption) => void;
   readonly player: PlayerIdentity | null;
   readonly guestSavedNickname: string | null;
   readonly onPlayAgain: () => void;
@@ -69,8 +66,6 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({
   timedMode,
   syncStatus,
   syncMessage,
-  mapStyle,
-  onChangeMapStyle,
   player,
   guestSavedNickname,
   onPlayAgain,
@@ -280,9 +275,7 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({
 
           {/* Full-Poland Summary Map */}
           <div className="h-[340px] overflow-hidden rounded-2xl border border-white/10 shadow-2xl sm:h-[400px] lg:col-span-7">
-            <PolandGoogleMap
-              mapStyle={mapStyle}
-              onChangeMapStyle={onChangeMapStyle}
+            <PolandMap
               mode={{kind: 'summary', rounds: completedRounds}}
             />
           </div>

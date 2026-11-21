@@ -1,13 +1,11 @@
 import React from 'react';
-import {ArrowRight, Clock, Compass, Film, Flag, Lightbulb, MapPin, Sparkles} from 'lucide-react';
+import {ArrowRight, Clock, Compass, Flag, Lightbulb, MapPin, Sparkles} from 'lucide-react';
 import {MAX_ROUND_POINTS, formatDistanceKm} from '../../domain/geoScoring';
 import type {
   IAiExplorerGateway,
-  MapStyleOption,
-  PolandLocation,
   RoundOutcome,
 } from '../../domain/types';
-import {PolandGoogleMap} from '../map/PolandGoogleMap';
+import {PolandMap} from '../map/PolandMap';
 import {AiExplorerDrawer} from './AiExplorerDrawer';
 
 export interface RoundResultOverlayProps {
@@ -15,11 +13,8 @@ export interface RoundResultOverlayProps {
   readonly roundIndex: number;
   readonly totalRounds: number;
   readonly totalScore: number;
-  readonly mapStyle: MapStyleOption;
-  readonly onChangeMapStyle: (style: MapStyleOption) => void;
   readonly aiGateway: IAiExplorerGateway;
   readonly isOnline: boolean;
-  readonly onAnimateLocation: (location: PolandLocation) => void;
   readonly onNextRound: () => void;
 }
 
@@ -28,11 +23,8 @@ export const RoundResultOverlay: React.FC<RoundResultOverlayProps> = ({
   roundIndex,
   totalRounds,
   totalScore,
-  mapStyle,
-  onChangeMapStyle,
   aiGateway,
   isOnline,
-  onAnimateLocation,
   onNextRound,
 }) => {
   const isFinalRound = roundIndex + 1 >= totalRounds;
@@ -45,9 +37,7 @@ export const RoundResultOverlay: React.FC<RoundResultOverlayProps> = ({
         {/* Left/Top: Interactive Result Map with Geodesic Line */}
         <div className="flex flex-col gap-3 lg:col-span-7">
           <div className="h-[300px] w-full overflow-hidden rounded-2xl border border-white/10 shadow-2xl sm:h-[420px] lg:h-[480px]">
-            <PolandGoogleMap
-              mapStyle={mapStyle}
-              onChangeMapStyle={onChangeMapStyle}
+            <PolandMap
               mode={{kind: 'result', outcome}}
             />
           </div>
@@ -63,19 +53,9 @@ export const RoundResultOverlay: React.FC<RoundResultOverlayProps> = ({
                 Twój wybór
               </span>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => onAnimateLocation(location)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-200 transition-colors hover:bg-emerald-500/20"
-              >
-                <Film className="h-3.5 w-3.5" />
-                Animuj kadr w wideo
-              </button>
-              <span className="font-mono text-slate-400 tabular-nums">
-                {location.lat.toFixed(4)}°N, {location.lng.toFixed(4)}°E
-              </span>
-            </div>
+            <span className="font-mono text-slate-400 tabular-nums">
+              {location.lat.toFixed(4)}°N, {location.lng.toFixed(4)}°E
+            </span>
           </div>
         </div>
 
@@ -175,7 +155,7 @@ export const RoundResultOverlay: React.FC<RoundResultOverlayProps> = ({
             </button>
           </div>
 
-          {/* Embedded AI Explorer (Search + Maps + High Thinking) */}
+          {/* Embedded AI Explorer (Search + Deep Analysis) */}
           <AiExplorerDrawer
             outcome={outcome}
             gateway={aiGateway}

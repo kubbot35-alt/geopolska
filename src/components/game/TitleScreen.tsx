@@ -4,11 +4,9 @@ import {
   Camera,
   CheckCircle2,
   Clock,
-  Compass,
   Database,
   Eye,
   EyeOff,
-  Film,
   LogIn,
   LogOut,
   Play,
@@ -44,8 +42,6 @@ export interface TitleScreenProps {
   readonly onStartGame: () => void;
   readonly onStartDailyChallenge: () => void;
   readonly onOpenLeaderboard: (dailyFirst?: boolean) => void;
-  readonly onOpenChallengeCreator: () => void;
-  readonly onOpenVideoStudio: () => void;
   readonly onOpenLocationDatabase: () => void;
   readonly locations: readonly PolandLocation[];
   readonly player: PlayerIdentity | null;
@@ -76,8 +72,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onStartGame,
   onStartDailyChallenge,
   onOpenLeaderboard,
-  onOpenChallengeCreator,
-  onOpenVideoStudio,
   onOpenLocationDatabase,
   locations,
   player,
@@ -155,24 +149,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           >
             <Trophy className="h-3.5 w-3.5 text-emerald-400" />
             Rankingi
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenChallengeCreator}
-            className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-white/10 bg-[#0D151F]/94 px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-emerald-500/40 hover:text-white whitespace-nowrap shrink-0"
-          >
-            <Compass className="h-3.5 w-3.5 text-emerald-400" />
-            Kreator Wyzwań AI
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenVideoStudio}
-            className="inline-flex min-h-[40px] items-center gap-2 rounded-lg border border-white/10 bg-[#0D151F]/94 px-3.5 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-emerald-500/40 hover:text-white whitespace-nowrap shrink-0"
-          >
-            <Film className="h-3.5 w-3.5 text-emerald-400" />
-            Studio Wideo AI
           </button>
 
           <button

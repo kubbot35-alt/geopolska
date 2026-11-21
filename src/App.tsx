@@ -7,14 +7,12 @@ import {RoundResultOverlay} from './components/game/RoundResultOverlay';
 import {SummaryScreen} from './components/game/SummaryScreen';
 import {TitleScreen} from './components/game/TitleScreen';
 import {ZoomPanPhotoViewer} from './components/game/ZoomPanPhotoViewer';
-import {ChallengeGeneratorModal} from './components/modals/ChallengeGeneratorModal';
 import {GuestNicknameModal} from './components/modals/GuestNicknameModal';
 import {
   LeaderboardHistoryModal,
   type LeaderboardModalTab,
 } from './components/modals/LeaderboardHistoryModal';
 import {LocationDatabaseModal} from './components/modals/LocationDatabaseModal';
-import {VideoStudioModal} from './components/modals/VideoStudioModal';
 import {
   DAILY_CHALLENGE_ROUNDS,
   drawDailyChallengeDeck,
@@ -28,11 +26,9 @@ import {
 } from './domain/gameMachine';
 import {POLAND_LOCATIONS, getLocationsForPool} from './domain/polandLocations';
 import type {
-  ChallengeRoundCountOption,
   GeoCoordinate,
   LocalDailyCompletion,
   LocationCatalogState,
-  MapStyleOption,
   PlayerIdentity,
   PolandLocation,
 } from './domain/types';
@@ -61,14 +57,10 @@ export default function App() {
   const [player, setPlayer] = useState<PlayerIdentity | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundEngine.isMuted());
-  const [mapStyle, setMapStyle] = useState<MapStyleOption>('dark');
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardTab, setLeaderboardTab] = useState<LeaderboardModalTab>('daily');
-  const [challengeCreatorOpen, setChallengeCreatorOpen] = useState(false);
   const [locationDbOpen, setLocationDbOpen] = useState(false);
-  const [videoStudioOpen, setVideoStudioOpen] = useState(false);
-  const [videoStudioLocation, setVideoStudioLocation] = useState<PolandLocation | null>(null);
 
   const [locationsCatalog, setLocationsCatalog] = useState<readonly PolandLocation[]>(POLAND_LOCATIONS);
   const [catalogState, setCatalogState] = useState<LocationCatalogState>({status: 'loading'});
@@ -298,13 +290,11 @@ export default function App() {
       timedMode: state.timedMode,
       poolFilter: state.poolFilter,
       roundCount: state.selectedRoundCount,
-      movementMode: state.movementMode,
       deck,
     });
   }, [
     isOnline,
     locationsCatalog,
-    state.movementMode,
     state.poolFilter,
     state.selectedRoundCount,
     state.timedMode,
@@ -320,26 +310,9 @@ export default function App() {
       timedMode: state.timedMode,
       poolFilter: 'all',
       roundCount: DAILY_CHALLENGE_ROUNDS,
-      movementMode: state.movementMode,
       deck,
     });
-  }, [locationsCatalog, state.movementMode, state.timedMode]);
-
-  const handleStartChallengeDeck = useCallback(
-    (deck: readonly PolandLocation[], roundCount: ChallengeRoundCountOption) => {
-      dispatch({
-        type: 'START_GAME',
-        gameMode: 'custom',
-        dailyDateKey: null,
-        timedMode: state.timedMode,
-        poolFilter: 'all',
-        roundCount,
-        movementMode: state.movementMode,
-        deck,
-      });
-    },
-    [state.movementMode, state.timedMode],
-  );
+  }, [locationsCatalog, state.timedMode]);
 
   const handlePlacePin = useCallback((coordinate: GeoCoordinate) => {
     soundEngine.playPinDrop();
@@ -377,11 +350,6 @@ export default function App() {
   const handleOpenLeaderboard = useCallback((dailyFirst = false) => {
     setLeaderboardTab(dailyFirst ? 'daily' : 'leaderboard');
     setLeaderboardOpen(true);
-  }, []);
-
-  const handleOpenVideoStudio = useCallback((location: PolandLocation | null = null) => {
-    setVideoStudioLocation(location);
-    setVideoStudioOpen(true);
   }, []);
 
   const handleSignIn = useCallback(async () => {
@@ -474,18 +442,14 @@ export default function App() {
       if (e.key === 'Escape') {
         if (guestPromptOpen && !guestSubmitting) setGuestPromptOpen(false);
         if (leaderboardOpen) setLeaderboardOpen(false);
-        if (challengeCreatorOpen) setChallengeCreatorOpen(false);
         if (locationDbOpen) setLocationDbOpen(false);
-        if (videoStudioOpen) setVideoStudioOpen(false);
         return;
       }
 
       if (
         guestPromptOpen ||
         leaderboardOpen ||
-        challengeCreatorOpen ||
-        locationDbOpen ||
-        videoStudioOpen
+        locationDbOpen
       ) {
         return;
       }
@@ -512,9 +476,7 @@ export default function App() {
     guestPromptOpen,
     guestSubmitting,
     leaderboardOpen,
-    challengeCreatorOpen,
     locationDbOpen,
-    videoStudioOpen,
     state,
   ]);
 
@@ -534,8 +496,6 @@ export default function App() {
           onStartGame={handleStartGame}
           onStartDailyChallenge={handleStartDailyChallenge}
           onOpenLeaderboard={handleOpenLeaderboard}
-          onOpenChallengeCreator={() => setChallengeCreatorOpen(true)}
-          onOpenVideoStudio={() => handleOpenVideoStudio(null)}
           onOpenLocationDatabase={() => setLocationDbOpen(true)}
           locations={locationsCatalog}
           player={player}
@@ -574,12 +534,12 @@ export default function App() {
               <ZoomPanPhotoViewer
                 locationId={state.currentLocation.id}
                 imageUrl={state.currentLocation.imageUrl}
-                reloadNonce={state.panoramaReloadNonce}
+                reloadNonce={state.imageReloadNonce}
                 isOnline={isOnline}
                 fallbackNotice={state.lastFallbackNotice}
                 onAutoSkipLocation={() => handleSkipLocation('auto')}
                 onManualSkipLocation={() => handleSkipLocation('manual')}
-                onRetryImage={() => dispatch({type: 'RETRY_STREET_VIEW'})}
+                onRetryImage={() => dispatch({type: 'RETRY_LOCATION_IMAGE'})}
               />
 
               <HintPanel
@@ -591,8 +551,6 @@ export default function App() {
               <PlayingMapDock
                 roundKey={`${state.roundIndex}_${state.currentLocation.id}`}
                 selectedGuess={state.selectedGuess}
-                mapStyle={mapStyle}
-                onChangeMapStyle={setMapStyle}
                 onSelectGuess={handlePlacePin}
                 onSubmitGuess={handleSubmitGuess}
               />
@@ -605,11 +563,8 @@ export default function App() {
               roundIndex={state.roundIndex}
               totalRounds={state.totalRounds}
               totalScore={state.totalScore}
-              mapStyle={mapStyle}
-              onChangeMapStyle={setMapStyle}
               aiGateway={aiExplorerGateway}
               isOnline={isOnline}
-              onAnimateLocation={(loc) => handleOpenVideoStudio(loc)}
               onNextRound={() => dispatch({type: 'NEXT_ROUND'})}
             />
           )}
@@ -627,8 +582,6 @@ export default function App() {
           timedMode={state.timedMode}
           syncStatus={state.syncStatus}
           syncMessage={state.syncMessage}
-          mapStyle={mapStyle}
-          onChangeMapStyle={setMapStyle}
           player={player}
           guestSavedNickname={guestSavedNickname}
           onPlayAgain={handleStartGame}
@@ -671,15 +624,6 @@ export default function App() {
         onSignIn={() => void handleSignIn()}
       />
 
-      <ChallengeGeneratorModal
-        open={challengeCreatorOpen}
-        onClose={() => setChallengeCreatorOpen(false)}
-        gateway={aiExplorerGateway}
-        locations={locationsCatalog}
-        isOnline={isOnline}
-        onStartChallengeDeck={handleStartChallengeDeck}
-      />
-
       <LocationDatabaseModal
         open={locationDbOpen}
         onClose={() => setLocationDbOpen(false)}
@@ -695,14 +639,6 @@ export default function App() {
         onCatalogMutated={async () => {
           await syncLocationsFromCloud(false);
         }}
-      />
-
-      <VideoStudioModal
-        open={videoStudioOpen}
-        onClose={() => setVideoStudioOpen(false)}
-        gateway={aiExplorerGateway}
-        isOnline={isOnline}
-        initialLocation={videoStudioLocation}
       />
     </div>
   );

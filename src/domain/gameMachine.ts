@@ -10,40 +10,11 @@ import type {
   PolandLocation,
   RoundCountOption,
   RoundOutcome,
-  StreetViewMovementMode,
 } from './types';
 
 export const TOTAL_ROUNDS_PER_GAME: RoundCountOption = 5;
 export const ROUND_COUNT_OPTIONS: readonly RoundCountOption[] = [3, 5, 10, 15, 20];
 export const ROUND_TIMER_SECONDS = 60;
-
-export interface StreetViewModeOption {
-  readonly id: StreetViewMovementMode;
-  readonly label: string;
-  readonly shortLabel: string;
-  readonly description: string;
-}
-
-export const STREET_VIEW_MODE_OPTIONS: readonly StreetViewModeOption[] = [
-  {
-    id: 'move',
-    label: 'Ruch',
-    shortLabel: 'Move',
-    description: 'Swobodne poruszanie się po ulicach, obrót 360° i zbliżanie',
-  },
-  {
-    id: 'no_move',
-    label: 'No Move',
-    shortLabel: 'No Move',
-    description: 'Obrót 360° i zbliżanie z jednego punktu, bez chodzenia po ulicach',
-  },
-  {
-    id: 'nmpz',
-    label: 'NMPZ',
-    shortLabel: 'NMPZ',
-    description: 'Zamrożony kadr — bez ruchu, bez obrotu kamery i bez zoomu',
-  },
-];
 
 /**
  * Deterministic Fisher-Yates shuffle returning a new array of `count` unique locations.
@@ -83,14 +54,12 @@ export function createInitialGameState(
   timedMode = false,
   poolFilter: GamePhase['poolFilter'] = 'all',
   selectedRoundCount: RoundCountOption = TOTAL_ROUNDS_PER_GAME,
-  movementMode: StreetViewMovementMode = 'move',
 ): GamePhase {
   return {
     status: 'TITLE_MENU',
     timedMode,
     poolFilter,
     selectedRoundCount,
-    movementMode,
   };
 }
 
@@ -128,7 +97,6 @@ function finalizeActiveRound(
     timedMode: state.timedMode,
     poolFilter: state.poolFilter,
     selectedRoundCount: state.selectedRoundCount,
-    movementMode: state.movementMode,
     roundIndex: state.roundIndex,
     totalRounds: state.totalRounds,
     deck: state.deck,
@@ -174,16 +142,6 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
       };
     }
 
-    case 'SET_MOVEMENT_MODE': {
-      if (state.status !== 'TITLE_MENU') {
-        return state;
-      }
-      return {
-        ...state,
-        movementMode: command.movementMode,
-      };
-    }
-
     case 'START_GAME': {
       if (command.deck.length === 0) {
         return state;
@@ -195,7 +153,6 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
         timedMode: command.timedMode,
         poolFilter: command.poolFilter,
         selectedRoundCount: command.roundCount,
-        movementMode: command.movementMode,
         roundIndex: 0,
         totalRounds: command.deck.length,
         deck: command.deck,
@@ -206,7 +163,7 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
         secondsRemaining: ROUND_TIMER_SECONDS,
         completedRounds: [],
         totalScore: 0,
-        panoramaReloadNonce: 0,
+        imageReloadNonce: 0,
         lastFallbackNotice: null,
       };
     }
@@ -259,25 +216,6 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
       return finalizeActiveRound(state, true);
     }
 
-    case 'SYNC_PANORAMA_COORDINATE': {
-      if (state.status !== 'PLAYING' || state.currentLocation.id !== command.locationId) {
-        return state;
-      }
-      const syncedLocation: PolandLocation = {
-        ...state.currentLocation,
-        lat: command.coordinate.lat,
-        lng: command.coordinate.lng,
-      };
-      const updatedDeck = state.deck.map((item, idx) =>
-        idx === state.roundIndex ? syncedLocation : item,
-      );
-      return {
-        ...state,
-        deck: updatedDeck,
-        currentLocation: syncedLocation,
-      };
-    }
-
     case 'REPLACE_FAILED_LOCATION': {
       if (state.status !== 'PLAYING') {
         return state;
@@ -287,8 +225,8 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
       );
       const notice =
         command.reason === 'manual'
-          ? 'Wylosowano nową lokalizację Street View w Polsce.'
-          : 'Brak widoku Street View w tym punkcie — automatycznie wylosowano inną lokalizację w Polsce.';
+          ? 'Wylosowano nową lokalizację w Polsce.'
+          : 'Nie udało się wczytać zdjęcia dla tego punktu — automatycznie wylosowano inną lokalizację w Polsce.';
       return {
         ...state,
         deck: updatedDeck,
@@ -297,18 +235,18 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
         selectedGuess: null,
         hintLevel: 0,
         secondsRemaining: ROUND_TIMER_SECONDS,
-        panoramaReloadNonce: state.panoramaReloadNonce + 1,
+        imageReloadNonce: state.imageReloadNonce + 1,
         lastFallbackNotice: notice,
       };
     }
 
-    case 'RETRY_STREET_VIEW': {
+    case 'RETRY_LOCATION_IMAGE': {
       if (state.status !== 'PLAYING') {
         return state;
       }
       return {
         ...state,
-        panoramaReloadNonce: state.panoramaReloadNonce + 1,
+        imageReloadNonce: state.imageReloadNonce + 1,
         lastFallbackNotice: null,
       };
     }
@@ -327,7 +265,6 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
           timedMode: state.timedMode,
           poolFilter: state.poolFilter,
           selectedRoundCount: state.selectedRoundCount,
-          movementMode: state.movementMode,
           completedRounds: state.completedRounds,
           totalScore: state.totalScore,
           averageDistanceKm: calculateAverageDistanceKm(distances),
@@ -342,7 +279,6 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
         timedMode: state.timedMode,
         poolFilter: state.poolFilter,
         selectedRoundCount: state.selectedRoundCount,
-        movementMode: state.movementMode,
         roundIndex: nextIndex,
         totalRounds: state.totalRounds,
         deck: state.deck,
@@ -353,7 +289,7 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
         secondsRemaining: ROUND_TIMER_SECONDS,
         completedRounds: state.completedRounds,
         totalScore: state.totalScore,
-        panoramaReloadNonce: 0,
+        imageReloadNonce: 0,
         lastFallbackNotice: null,
       };
     }
@@ -375,7 +311,6 @@ export function gameReducer(state: GamePhase, command: GameCommand): GamePhase {
         timedMode: state.timedMode,
         poolFilter: state.poolFilter,
         selectedRoundCount: state.selectedRoundCount,
-        movementMode: state.movementMode,
       };
     }
   }

@@ -1,13 +1,7 @@
 import {z} from 'zod';
 import type {
-  AiAnimateVideoRequest,
-  AiAnimateVideoResult,
   AiDeepAnalysisResult,
-  AiMapsNearbyResult,
   AiSearchFactsResult,
-  AiThemedChallengeResult,
-  ChallengeCandidateSummary,
-  ChallengeRoundCountOption,
   IAiExplorerGateway,
   PolandLocation,
   Result,
@@ -25,32 +19,8 @@ const SearchFactsResponseSchema = z.object({
   sources: z.array(GroundingLinkSchema),
 });
 
-const MapsNearbyResponseSchema = z.object({
-  markdown: z.string(),
-  places: z.array(GroundingLinkSchema),
-});
-
 const DeepAnalysisResponseSchema = z.object({
   markdown: z.string(),
-  model: z.string(),
-});
-
-const ThemedChallengeResponseSchema = z.object({
-  title: z.string().min(2),
-  briefing: z.string().min(5),
-  stops: z.array(
-    z.object({
-      locationId: z.string().min(1),
-      customClue: z.string(),
-    }),
-  ).min(1),
-  model: z.string(),
-});
-
-const AnimateVideoResponseSchema = z.object({
-  videoDataUrl: z.string().min(10),
-  mimeType: z.string().min(3),
-  aspectRatio: z.enum(['16:9', '9:16']),
   model: z.string(),
 });
 
@@ -113,22 +83,6 @@ export class HttpAiExplorerGateway implements IAiExplorerGateway {
     );
   }
 
-  fetchNearbyMapsPlaces(
-    location: PolandLocation,
-    signal: AbortSignal,
-  ): Promise<Result<AiMapsNearbyResult, string>> {
-    return postJson(
-      '/api/ai/maps-nearby',
-      {
-        locationName: location.name,
-        lat: location.lat,
-        lng: location.lng,
-      },
-      MapsNearbyResponseSchema,
-      signal,
-    );
-  }
-
   fetchDeepAnalysis(
     outcome: RoundOutcome,
     signal: AbortSignal,
@@ -143,40 +97,6 @@ export class HttpAiExplorerGateway implements IAiExplorerGateway {
         funFact: outcome.location.funFact,
       },
       DeepAnalysisResponseSchema,
-      signal,
-    );
-  }
-
-  generateThemedChallenge(
-    themePrompt: string,
-    region: string,
-    roundCount: ChallengeRoundCountOption,
-    candidates: readonly ChallengeCandidateSummary[],
-    signal: AbortSignal,
-  ): Promise<Result<AiThemedChallengeResult, string>> {
-    return postJson(
-      '/api/ai/themed-challenge',
-      {themePrompt, region, roundCount, candidates},
-      ThemedChallengeResponseSchema,
-      signal,
-    );
-  }
-
-  animateImageToVideo(
-    request: AiAnimateVideoRequest,
-    signal: AbortSignal,
-  ): Promise<Result<AiAnimateVideoResult, string>> {
-    return postJson(
-      '/api/ai/animate-video',
-      {
-        ...(request.imageBase64 ? {imageBase64: request.imageBase64} : {}),
-        ...(request.mimeType ? {mimeType: request.mimeType} : {}),
-        ...(request.locationImageUrl ? {locationImageUrl: request.locationImageUrl} : {}),
-        ...(request.locationName ? {locationName: request.locationName} : {}),
-        prompt: request.prompt,
-        aspectRatio: request.aspectRatio,
-      },
-      AnimateVideoResponseSchema,
       signal,
     );
   }

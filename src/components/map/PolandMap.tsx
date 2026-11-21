@@ -1,7 +1,7 @@
 import React, {useEffect, useRef} from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type {GeoCoordinate, MapStyleOption, RoundOutcome} from '../../domain/types';
+import type {GeoCoordinate, RoundOutcome} from '../../domain/types';
 
 export const POLAND_DEFAULT_CENTER: GeoCoordinate = {lat: 52.0, lng: 19.1};
 export const POLAND_DEFAULT_ZOOM = 6;
@@ -10,57 +10,15 @@ interface TileLayerSpec {
   readonly url: string;
   readonly attribution: string;
   readonly maxZoom: number;
-  readonly subdomains?: string;
+  readonly subdomains: string;
 }
 
-interface MapStyleMeta {
-  readonly id: MapStyleOption;
-  readonly label: string;
-  readonly base: TileLayerSpec;
-  readonly overlay?: TileLayerSpec;
-}
-
-const MAP_STYLE_OPTIONS: readonly MapStyleMeta[] = [
-  {
-    id: 'dark',
-    label: 'Ciemna',
-    base: {
-      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; OpenStreetMap &copy; CARTO',
-      maxZoom: 19,
-      subdomains: 'abcd',
-    },
-  },
-  {
-    id: 'satellite',
-    label: 'Satelita',
-    base: {
-      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      attribution: '&copy; Esri World Imagery',
-      maxZoom: 18,
-    },
-    overlay: {
-      url: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
-      attribution: '&copy; CARTO',
-      maxZoom: 19,
-      subdomains: 'abcd',
-    },
-  },
-  {
-    id: 'terrain',
-    label: 'Teren',
-    base: {
-      url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-      attribution: '&copy; OpenStreetMap &copy; OpenTopoMap',
-      maxZoom: 17,
-      subdomains: 'abc',
-    },
-  },
-];
-
-function getStyleMeta(style: MapStyleOption): MapStyleMeta {
-  return MAP_STYLE_OPTIONS.find((opt) => opt.id === style) ?? MAP_STYLE_OPTIONS[0];
-}
+const TERRAIN_TILE_LAYER: TileLayerSpec = {
+  url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+  attribution: '&copy; OpenStreetMap &copy; OpenTopoMap',
+  maxZoom: 17,
+  subdomains: 'abc',
+};
 
 function createTeardropPinIcon(fill: string, stroke: string, dot: string, size = 30): L.DivIcon {
   const height = Math.round(size * 1.25);
@@ -109,27 +67,21 @@ export type PolandMapMode =
       readonly rounds: readonly RoundOutcome[];
     };
 
-export interface PolandGoogleMapProps {
-  readonly apiKey?: string;
+export interface PolandMapProps {
   readonly mode: PolandMapMode;
-  readonly mapStyle: MapStyleOption;
-  readonly onChangeMapStyle: (style: MapStyleOption) => void;
   readonly className?: string;
 }
 
 /**
- * Interactive 100% free Leaflet map of Poland (CartoDB Dark / Esri Satellite / OpenTopoMap).
+ * Interactive 100% free Leaflet terrain map of Poland (OpenTopoMap).
  * Zero paid API keys or billing required. Automatically invalidates size on dock expand/collapse.
  */
-export const PolandGoogleMap: React.FC<PolandGoogleMapProps> = ({
+export const PolandMap: React.FC<PolandMapProps> = ({
   mode,
-  mapStyle,
-  onChangeMapStyle,
   className = '',
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const tileGroupRef = useRef<L.LayerGroup | null>(null);
   const overlayGroupRef = useRef<L.LayerGroup | null>(null);
   const lastRoundKeyRef = useRef<string | null>(null);
 
@@ -137,7 +89,7 @@ export const PolandGoogleMap: React.FC<PolandGoogleMapProps> = ({
   const modeRef = useRef<PolandMapMode>(mode);
   modeRef.current = mode;
 
-  // 1. Initialize Leaflet map instance once & watch container resize (critical for hover-expanding dock)
+  // 1. Initialize Leaflet map instance once with OpenTopoMap Terrain layer & watch container resize
   useEffect(() => {
     const container = containerRef.current;
     if (!container) {
@@ -148,14 +100,19 @@ export const PolandGoogleMap: React.FC<PolandGoogleMapProps> = ({
       center: [POLAND_DEFAULT_CENTER.lat, POLAND_DEFAULT_CENTER.lng],
       zoom: POLAND_DEFAULT_ZOOM,
       minZoom: 5,
-      maxZoom: 17,
+      maxZoom: TERRAIN_TILE_LAYER.maxZoom,
       zoomControl: false,
       attributionControl: true,
     });
 
     L.control.zoom({position: 'bottomright'}).addTo(map);
 
-    const tileGroup = L.layerGroup().addTo(map);
+    L.tileLayer(TERRAIN_TILE_LAYER.url, {
+      attribution: TERRAIN_TILE_LAYER.attribution,
+      maxZoom: TERRAIN_TILE_LAYER.maxZoom,
+      subdomains: TERRAIN_TILE_LAYER.subdomains,
+    }).addTo(map);
+
     const overlayGroup = L.layerGroup().addTo(map);
 
     map.on('click', (event: L.LeafletMouseEvent) => {
@@ -170,7 +127,6 @@ export const PolandGoogleMap: React.FC<PolandGoogleMapProps> = ({
     });
 
     mapRef.current = map;
-    tileGroupRef.current = tileGroup;
     overlayGroupRef.current = overlayGroup;
 
     let rafId = 0;
@@ -193,37 +149,10 @@ export const PolandGoogleMap: React.FC<PolandGoogleMapProps> = ({
       resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
-      tileGroupRef.current = null;
       overlayGroupRef.current = null;
       lastRoundKeyRef.current = null;
     };
   }, []);
-
-  // 2. Sync free tile layer stack whenever mapStyle changes (Ciemna / Satelita / Teren)
-  useEffect(() => {
-    const tileGroup = tileGroupRef.current;
-    if (!tileGroup) {
-      return;
-    }
-
-    tileGroup.clearLayers();
-    const meta = getStyleMeta(mapStyle);
-
-    L.tileLayer(meta.base.url, {
-      attribution: meta.base.attribution,
-      maxZoom: meta.base.maxZoom,
-      ...(meta.base.subdomains ? {subdomains: meta.base.subdomains} : {}),
-    }).addTo(tileGroup);
-
-    if (meta.overlay) {
-      L.tileLayer(meta.overlay.url, {
-        attribution: meta.overlay.attribution,
-        maxZoom: meta.overlay.maxZoom,
-        ...(meta.overlay.subdomains ? {subdomains: meta.overlay.subdomains} : {}),
-        opacity: 0.9,
-      }).addTo(tileGroup);
-    }
-  }, [mapStyle]);
 
   // 3. Render markers, polylines, and bounds for the active mode (guess / result / summary)
   useEffect(() => {
@@ -342,32 +271,7 @@ export const PolandGoogleMap: React.FC<PolandGoogleMapProps> = ({
 
   return (
     <div className={`relative h-full w-full overflow-hidden bg-[#0F1722] ${className}`}>
-      {/* Interactive Free Map View Style Switcher (Ciemna / Satelita / Teren) */}
-      <div
-        role="group"
-        aria-label="Styl mapy Polski"
-        className="absolute left-2.5 top-2.5 z-[500] inline-flex items-center gap-0.5 rounded-lg border border-white/15 bg-[#090E14]/92 p-0.5 shadow-lg"
-      >
-        {MAP_STYLE_OPTIONS.map((opt) => {
-          const active = mapStyle === opt.id;
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => onChangeMapStyle(opt.id)}
-              className={`min-h-[30px] rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors whitespace-nowrap ${
-                active
-                  ? 'bg-emerald-500 text-[#05120D]'
-                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              {opt.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Leaflet Canvas Mount */}
+      {/* Leaflet Canvas Mount (OpenTopoMap Terrain) */}
       <div
         ref={containerRef}
         className={`h-full w-full ${mode.kind === 'guess' ? 'cursor-crosshair' : ''}`}
