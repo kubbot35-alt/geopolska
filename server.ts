@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, {type Request, type Response} from 'express';
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import {fileURLToPath} from 'url';
 import {GoogleGenAI, ThinkingLevel} from '@google/genai';
@@ -311,10 +312,16 @@ Przeanalizuj po polsku i wypunktuj 4 konkretne cechy wizualne, architektoniczne,
     }
   });
 
+  const httpServer = http.createServer(app);
+
   if (!IS_PROD) {
     const {createServer: createViteServer} = await import('vite');
+    const hmrConfig = process.env.DISABLE_HMR === 'true' ? false : {server: httpServer};
     const vite = await createViteServer({
-      server: {middlewareMode: true},
+      server: {
+        middlewareMode: true,
+        hmr: hmrConfig,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -331,7 +338,7 @@ Przeanalizuj po polsku i wypunktuj 4 konkretne cechy wizualne, architektoniczne,
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`GeoPolska server listening on http://0.0.0.0:${PORT}`);
   });
 }
