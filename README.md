@@ -20,7 +20,7 @@ Projekt **GeoPolska** znajduje się w dojrzałym, produkcyjnym stanie i działa 
   - Katalog **1 100 lokalizacji z całej Polski** (20 klasycznych, wbudowanych lokalizacji działających w 100% offline + 1 080 zweryfikowanych miast, zamków, szczytów, jezior i nadmorskich miejsc serwowanych przez darmowe serwerowe proxy Wikimedia / Polskiej Wikipedii).
   - Pełnoekranowy ekran startowy z płynnym pokazem slajdów prawdziwych zdjęć z całej bazy 1 100 lokalizacji (algorytm Fisher-Yates bez powtórek, 2-slotowy bufor DOM, preload i efekt Ken Burns).
   - Interaktywna mapa Polski oparta na **Leaflet** i darmowej warstwie terenowej **OpenTopoMap** — bez wymaganych płatnych kluczy Google Maps.
-  - Tryb standardowy (`3`, `5`, `10`, `15` lub `20` rund, filtrowanie kategorii, opcjonalny timer `60 s`) oraz deterministyczne **Wyzwanie Dnia** (wspólna 5-rundowa talia dla wszystkich graczy wg czasu `Europe/Warsaw`).
+  - Tryb standardowy (`3`, `5`, `10`, `15`, `20`, `30`, `50` lub `100` rund, filtrowanie kategorii, opcjonalny timer `60 s`) oraz deterministyczne **Wyzwanie Dnia** (wspólna 5-rundowa talia dla wszystkich graczy wg czasu `Europe/Warsaw`).
   - System punktacji Haversine skalibrowany dla terytorium Polski (`0–5000 pkt` za rundę) oraz dwupoziomowe podpowiedzi z karą punktową.
   - **Eksplorator AI** (po zakończeniu rundy) zasilany serwerowo przez darmowe API Google Gemini (`gemini-4-hydrogen`): ciekawostki z *Google Search Grounding* oraz *Detektyw Geograficzny* z analizą cech wizualnych.
   - Konta użytkowników (**Google / Firebase Auth**) oraz pełne wsparcie gry jako **Gość** z własnym nickiem, ujednoliconym rankingiem w Firestore, historią gier i kolejką synchronizacji offline (IndexedDB).

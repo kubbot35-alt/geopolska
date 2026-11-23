@@ -18,7 +18,7 @@ export type LocationPoolFilter =
   | 'woda_morze'
   | 'classic_20';
 
-export type RoundCountOption = 3 | 5 | 10 | 15 | 20;
+export type RoundCountOption = 3 | 5 | 10 | 15 | 20 | 30 | 50 | 100;
 
 export type GameMode = 'standard' | 'daily';
 

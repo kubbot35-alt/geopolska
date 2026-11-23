@@ -1,5 +1,6 @@
 import React, {useMemo} from 'react';
 import {formatPolishDateKey} from '../../domain/dailyChallenge';
+import {clampRoundCountToPool} from '../../domain/gameMachine';
 import {calculateMaxGamePoints} from '../../domain/geoScoring';
 import {buildLocationPoolOptions} from '../../domain/polandLocations';
 import {buildTitleBackdropSlides} from '../../domain/titleBackdropSlides';
@@ -61,8 +62,21 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 }) => {
   const poolOptions = useMemo(() => buildLocationPoolOptions(locations), [locations]);
   const backdropSlides = useMemo(() => buildTitleBackdropSlides(locations), [locations]);
-  const maxGamePoints = calculateMaxGamePoints(selectedRoundCount);
+  const activePoolId: LocationPoolFilter = !isOnline ? 'classic_20' : poolFilter;
+  const availablePoolCount =
+    poolOptions.find((opt) => opt.id === activePoolId)?.count ?? locations.length;
+  const effectiveRoundCount = clampRoundCountToPool(selectedRoundCount, availablePoolCount);
+  const maxGamePoints = calculateMaxGamePoints(effectiveRoundCount);
   const dailyDateLabel = formatPolishDateKey(dailyDateKey);
+
+  const handlePoolFilterChange = (nextPool: LocationPoolFilter): void => {
+    onSetPoolFilter(nextPool);
+    const nextCount = poolOptions.find((opt) => opt.id === nextPool)?.count ?? locations.length;
+    const clamped = clampRoundCountToPool(selectedRoundCount, nextCount);
+    if (clamped !== selectedRoundCount) {
+      onSetRoundCount(clamped);
+    }
+  };
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[#0C0E12] text-neutral-100">
@@ -85,9 +99,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           timedMode={timedMode}
           onSetTimedMode={onSetTimedMode}
           poolFilter={poolFilter}
-          onSetPoolFilter={onSetPoolFilter}
+          onSetPoolFilter={handlePoolFilterChange}
           poolOptions={poolOptions}
-          selectedRoundCount={selectedRoundCount}
+          availablePoolCount={availablePoolCount}
+          selectedRoundCount={effectiveRoundCount}
           onSetRoundCount={onSetRoundCount}
           totalLocationsCount={locations.length}
           maxGamePoints={maxGamePoints}

@@ -59,7 +59,7 @@
     },
     "GameRecord": {
       "title": "GameRecord",
-      "description": "Immutable completed GeoPolska match history record (3, 5, 10, 15, or 20 rounds) owned by a player.",
+      "description": "Immutable completed GeoPolska match history record (3, 5, 10, 15, 20, 30, 50, or 100 rounds) owned by a player.",
       "type": "object",
       "properties": {
         "uid": {
@@ -77,7 +77,7 @@
         },
         "totalScore": {
           "type": "integer",
-          "description": "Total match score (0 to roundsCount * 5000, max 100000)."
+          "description": "Total match score (0 to roundsCount * 5000, max 500000)."
         },
         "averageDistanceKm": {
           "type": "number",
@@ -89,20 +89,20 @@
         },
         "roundsCount": {
           "type": "integer",
-          "enum": [3, 5, 10, 15, 20],
-          "description": "Number of rounds completed (3, 5, 10, 15, or 20)."
+          "enum": [3, 5, 10, 15, 20, 30, 50, 100],
+          "description": "Number of rounds completed (3, 5, 10, 15, 20, 30, 50, or 100)."
         },
         "roundLocations": {
           "type": "array",
-          "description": "Bounded list of visited city names matching roundsCount (max 20)."
+          "description": "Bounded list of visited city names matching roundsCount (max 100)."
         },
         "roundScores": {
           "type": "array",
-          "description": "Bounded list of round scores matching roundsCount (max 20)."
+          "description": "Bounded list of round scores matching roundsCount (max 100)."
         },
         "roundDistances": {
           "type": "array",
-          "description": "Bounded list of round distances in km matching roundsCount (max 20)."
+          "description": "Bounded list of round distances in km matching roundsCount (max 100)."
         },
         "createdAt": {
           "type": "string",
@@ -455,11 +455,11 @@
         },
         "rawScore": {
           "type": "integer",
-          "description": "Raw match score (0 to roundsCount * 5000, max 100000)."
+          "description": "Raw match score (0 to roundsCount * 5000, max 500000)."
         },
         "roundsCount": {
           "type": "integer",
-          "enum": [3, 5, 10, 15, 20],
+          "enum": [3, 5, 10, 15, 20, 30, 50, 100],
           "description": "Rounds count of the recorded run."
         },
         "averageDistanceKm": {

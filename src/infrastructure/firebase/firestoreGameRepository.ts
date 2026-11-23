@@ -13,6 +13,7 @@ import {
   where,
 } from 'firebase/firestore';
 import {z} from 'zod';
+import {ROUND_COUNT_OPTIONS} from '../../domain/gameMachine';
 import {normalizeScoreToStandard5Rounds} from '../../domain/geoScoring';
 import {
   STANDARD_DATE_KEY,
@@ -61,8 +62,8 @@ const FirestoreRankingDocSchema = z.object({
   playerName: z.string().min(1).max(60),
   photoUrl: z.string().max(500),
   bestScore: z.number().int().min(0).max(25000),
-  rawScore: z.number().int().min(0).max(100000),
-  roundsCount: z.number().int().min(3).max(20),
+  rawScore: z.number().int().min(0).max(500000),
+  roundsCount: z.number().int().min(3).max(100),
   averageDistanceKm: z.number().min(0).max(25000),
   gamesPlayed: z.number().int().min(1).max(100000),
   timedMode: z.boolean(),
@@ -446,7 +447,7 @@ async function persistGuestRankingPayload(
   }
 }
 
-const VALID_ROUND_COUNTS = new Set<number>([3, 5, 10, 15, 20]);
+const VALID_ROUND_COUNTS = new Set<number>(ROUND_COUNT_OPTIONS);
 
 export class FirestoreGameRepository implements IGamePersistenceRepository {
   async saveCompletedGame(
@@ -460,7 +461,7 @@ export class FirestoreGameRepository implements IGamePersistenceRepository {
     if (!VALID_ROUND_COUNTS.has(rounds.length)) {
       return {
         ok: false,
-        error: 'Zapis wymaga ukończenia gry o obsługiwanej liczbie rund (3, 5, 10, 15 lub 20).',
+        error: `Zapis wymaga ukończenia gry o obsługiwanej liczbie rund (${ROUND_COUNT_OPTIONS.join(', ')}).`,
       };
     }
 

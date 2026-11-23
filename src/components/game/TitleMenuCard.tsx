@@ -15,6 +15,7 @@ export interface TitleMenuCardProps {
   readonly poolFilter: LocationPoolFilter;
   readonly onSetPoolFilter: (pool: LocationPoolFilter) => void;
   readonly poolOptions: readonly LocationPoolOption[];
+  readonly availablePoolCount: number;
   readonly selectedRoundCount: RoundCountOption;
   readonly onSetRoundCount: (count: RoundCountOption) => void;
   readonly totalLocationsCount: number;
@@ -29,6 +30,7 @@ export interface TitleMenuCardProps {
 interface ModeAndRoundsRowProps {
   readonly timedMode: boolean;
   readonly onSetTimedMode: (timed: boolean) => void;
+  readonly availablePoolCount: number;
   readonly selectedRoundCount: RoundCountOption;
   readonly onSetRoundCount: (count: RoundCountOption) => void;
 }
@@ -36,66 +38,85 @@ interface ModeAndRoundsRowProps {
 const ModeAndRoundsRow: React.FC<ModeAndRoundsRowProps> = ({
   timedMode,
   onSetTimedMode,
+  availablePoolCount,
   selectedRoundCount,
   onSetRoundCount,
-}) => (
-  <div className="mt-7 flex flex-wrap items-center gap-2.5">
-    <div role="group" aria-label="Tryb czasu rozgrywki" className={FLAT_SEGMENT_TRACK}>
-      <button
-        type="button"
-        onClick={() => onSetTimedMode(false)}
-        className={`min-h-[36px] rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200 whitespace-nowrap shrink-0 ${
-          !timedMode
-            ? 'bg-white text-[#0C0E12]'
-            : 'text-neutral-300 hover:text-white'
-        }`}
-      >
-        Swobodny
-      </button>
-      <button
-        type="button"
-        onClick={() => onSetTimedMode(true)}
-        className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200 whitespace-nowrap shrink-0 ${
-          timedMode
-            ? 'bg-white text-[#0C0E12]'
-            : 'text-neutral-300 hover:text-white'
-        }`}
-      >
-        <Clock className="h-3.5 w-3.5" />
-        60 s
-      </button>
-    </div>
+}) => {
+  const maxOption = ROUND_COUNT_OPTIONS[ROUND_COUNT_OPTIONS.length - 1];
+  return (
+    <div className="mt-6 flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2.5">
+        <span className="text-xs font-medium text-neutral-400">Tryb czasu</span>
+        <div role="group" aria-label="Tryb czasu rozgrywki" className={FLAT_SEGMENT_TRACK}>
+          <button
+            type="button"
+            onClick={() => onSetTimedMode(false)}
+            className={`min-h-[36px] rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200 whitespace-nowrap shrink-0 ${
+              !timedMode
+                ? 'bg-white text-[#0C0E12]'
+                : 'text-neutral-300 hover:text-white'
+            }`}
+          >
+            Swobodny
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetTimedMode(true)}
+            className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200 whitespace-nowrap shrink-0 ${
+              timedMode
+                ? 'bg-white text-[#0C0E12]'
+                : 'text-neutral-300 hover:text-white'
+            }`}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            60 s
+          </button>
+        </div>
+      </div>
 
-    <div
-      role="group"
-      aria-label="Liczba rund w grze"
-      className={`${FLAT_SEGMENT_TRACK} flex-1 justify-between gap-0.5`}
-    >
-      <span className="px-2 text-[11px] font-medium text-neutral-400 whitespace-nowrap">
-        Rundy
-      </span>
-      <div className="flex items-center gap-0.5">
-        {ROUND_COUNT_OPTIONS.map((count) => {
-          const active = selectedRoundCount === count;
-          return (
-            <button
-              key={count}
-              type="button"
-              onClick={() => onSetRoundCount(count)}
-              className={`min-h-[36px] min-w-[34px] rounded-md px-2 font-mono text-xs font-bold transition-colors duration-200 tabular-nums ${
-                active
-                  ? 'bg-white text-[#0C0E12]'
-                  : 'text-neutral-300 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              {count}
-            </button>
-          );
-        })}
+      <div>
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-neutral-400">Liczba rund</span>
+          {availablePoolCount < maxOption && (
+            <span className="text-[11px] text-neutral-400 tabular-nums">
+              pula: {availablePoolCount.toLocaleString('pl-PL')}
+            </span>
+          )}
+        </div>
+        <div
+          role="group"
+          aria-label="Liczba rund w grze"
+          className={`${FLAT_SEGMENT_TRACK} grid w-full grid-cols-4 gap-1 sm:grid-cols-8`}
+        >
+          {ROUND_COUNT_OPTIONS.map((count) => {
+            const active = selectedRoundCount === count;
+            const disabled = count > availablePoolCount;
+            return (
+              <button
+                key={count}
+                type="button"
+                disabled={disabled}
+                title={
+                  disabled
+                    ? `Wybrana kategoria zawiera ${availablePoolCount} lokalizacji`
+                    : `${count} ${count === 3 ? 'rundy' : 'rund'}`
+                }
+                onClick={() => onSetRoundCount(count)}
+                className={`min-h-[36px] rounded-md px-1.5 font-mono text-xs font-bold transition-colors duration-200 tabular-nums disabled:cursor-not-allowed disabled:opacity-30 ${
+                  active
+                    ? 'bg-white text-[#0C0E12]'
+                    : 'text-neutral-300 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                {count}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 interface CategoryGridProps {
   readonly poolOptions: readonly LocationPoolOption[];
@@ -149,6 +170,7 @@ export const TitleMenuCard: React.FC<TitleMenuCardProps> = ({
   poolFilter,
   onSetPoolFilter,
   poolOptions,
+  availablePoolCount,
   selectedRoundCount,
   onSetRoundCount,
   totalLocationsCount,
@@ -181,6 +203,7 @@ export const TitleMenuCard: React.FC<TitleMenuCardProps> = ({
     <ModeAndRoundsRow
       timedMode={timedMode}
       onSetTimedMode={onSetTimedMode}
+      availablePoolCount={availablePoolCount}
       selectedRoundCount={selectedRoundCount}
       onSetRoundCount={onSetRoundCount}
     />

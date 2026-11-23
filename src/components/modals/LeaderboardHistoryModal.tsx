@@ -455,7 +455,12 @@ export const LeaderboardHistoryModal: React.FC<LeaderboardHistoryModalProps> = (
                   </div>
                   {game.roundLocations.length > 0 && (
                     <p className="mt-2 text-xs text-slate-300">
-                      {game.roundLocations.join(' · ')}
+                      {game.roundLocations.slice(0, 12).join(' · ')}
+                      {game.roundLocations.length > 12 && (
+                        <span className="ml-1 text-slate-400">
+                          (+{game.roundLocations.length - 12} więcej)
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>

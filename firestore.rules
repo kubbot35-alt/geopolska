@@ -87,7 +87,7 @@ service cloud.firestore {
       data.updatedAt is timestamp;
     }
 
-    // Validation Blueprint: GameRecord (append-only match history supporting 3, 5, 10, 15, or 20 rounds)
+    // Validation Blueprint: GameRecord (append-only match history supporting 3, 5, 10, 15, 20, 30, 50, or 100 rounds)
     function isValidGameRecord(data) {
       return data.keys().hasAll([
         'uid',
@@ -119,7 +119,7 @@ service cloud.firestore {
       data.playerName.size() >= 1 &&
       data.playerName.size() <= 60 &&
       data.roundsCount is int &&
-      data.roundsCount in [3, 5, 10, 15, 20] &&
+      data.roundsCount in [3, 5, 10, 15, 20, 30, 50, 100] &&
       data.totalScore is int &&
       data.totalScore >= 0 &&
       data.totalScore <= data.roundsCount * 5000 &&
@@ -129,18 +129,18 @@ service cloud.firestore {
       data.timedMode is bool &&
       data.roundLocations is list &&
       data.roundLocations.size() == data.roundsCount &&
-      data.roundLocations.size() <= 20 &&
+      data.roundLocations.size() <= 100 &&
       data.roundLocations[0] is string &&
       data.roundLocations[0].size() <= 80 &&
       data.roundScores is list &&
       data.roundScores.size() == data.roundsCount &&
-      data.roundScores.size() <= 20 &&
+      data.roundScores.size() <= 100 &&
       data.roundScores[0] is int &&
       data.roundScores[0] >= 0 &&
       data.roundScores[0] <= 5000 &&
       data.roundDistances is list &&
       data.roundDistances.size() == data.roundsCount &&
-      data.roundDistances.size() <= 20 &&
+      data.roundDistances.size() <= 100 &&
       data.roundDistances[0] is number &&
       data.roundDistances[0] >= 0 &&
       data.createdAt is timestamp;
@@ -308,7 +308,7 @@ service cloud.firestore {
       data.photoUrl.size() <= 500 &&
       (data.playerType == 'authenticated' || data.photoUrl.size() == 0) &&
       data.roundsCount is int &&
-      data.roundsCount in [3, 5, 10, 15, 20] &&
+      data.roundsCount in [3, 5, 10, 15, 20, 30, 50, 100] &&
       (data.gameMode == 'standard' || data.roundsCount == 5) &&
       data.bestScore is int &&
       data.bestScore >= 0 &&

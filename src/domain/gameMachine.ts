@@ -13,8 +13,27 @@ import type {
 } from './types';
 
 export const TOTAL_ROUNDS_PER_GAME: RoundCountOption = 5;
-export const ROUND_COUNT_OPTIONS: readonly RoundCountOption[] = [3, 5, 10, 15, 20];
+export const ROUND_COUNT_OPTIONS: readonly RoundCountOption[] = [3, 5, 10, 15, 20, 30, 50, 100];
 export const ROUND_TIMER_SECONDS = 60;
+
+/**
+ * Clamps a requested round count to the largest supported RoundCountOption available in the pool.
+ */
+export function clampRoundCountToPool(
+  selected: RoundCountOption,
+  availableCount: number,
+): RoundCountOption {
+  if (selected <= availableCount) {
+    return selected;
+  }
+  for (let i = ROUND_COUNT_OPTIONS.length - 1; i >= 0; i -= 1) {
+    const option = ROUND_COUNT_OPTIONS[i];
+    if (option <= availableCount) {
+      return option;
+    }
+  }
+  return ROUND_COUNT_OPTIONS[0];
+}
 
 /**
  * Deterministic Fisher-Yates shuffle returning a new array of `count` unique locations.

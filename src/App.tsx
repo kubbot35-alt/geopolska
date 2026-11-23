@@ -19,6 +19,7 @@ import {
   getWarsawDateKey,
 } from './domain/dailyChallenge';
 import {
+  clampRoundCountToPool,
   createInitialGameState,
   drawFallbackLocation,
   drawUniqueLocations,
@@ -282,14 +283,15 @@ export default function App() {
 
   const handleStartGame = useCallback(() => {
     const activePool = getLocationsForPool(state.poolFilter, isOnline, locationsCatalog);
-    const deck = drawUniqueLocations(activePool, state.selectedRoundCount);
+    const effectiveRoundCount = clampRoundCountToPool(state.selectedRoundCount, activePool.length);
+    const deck = drawUniqueLocations(activePool, effectiveRoundCount);
     dispatch({
       type: 'START_GAME',
       gameMode: 'standard',
       dailyDateKey: null,
       timedMode: state.timedMode,
       poolFilter: state.poolFilter,
-      roundCount: state.selectedRoundCount,
+      roundCount: effectiveRoundCount,
       deck,
     });
   }, [
