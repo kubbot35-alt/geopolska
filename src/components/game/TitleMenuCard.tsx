@@ -7,6 +7,7 @@ import type {
   LocationPoolFilter,
   RoundCountOption,
 } from '../../domain/types';
+import {EuropeVersionButton} from './EuropeVersionButton';
 import {FLAT_SEGMENT_TRACK} from './titleStyles';
 
 export interface TitleMenuCardProps {
@@ -247,5 +248,7 @@ export const TitleMenuCard: React.FC<TitleMenuCardProps> = ({
         </div>
       </button>
     </div>
+
+    <EuropeVersionButton />
   </section>
 );
