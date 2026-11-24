@@ -244,7 +244,7 @@
     },
     "LocationDocument": {
       "title": "LocationDocument",
-      "description": "Public GeoPolska game location stored in Firestore with WGS84 coordinates, hint, fun fact, and category metadata (admin-writable, zero PII).",
+      "description": "Public GeoPolska / GeoEuropa game location stored in Firestore with catalog-partitioned WGS84 coordinates, hint, fun fact, difficulty, tags, and category metadata (admin-writable, zero PII).",
       "type": "object",
       "properties": {
         "id": {
@@ -256,28 +256,28 @@
         },
         "catalogKey": {
           "type": "string",
-          "enum": ["poland"],
-          "description": "Catalog partition key used for verified public list queries."
+          "enum": ["poland", "europe"],
+          "description": "Catalog partition key used for verified public list queries (poland or europe)."
         },
         "name": {
           "type": "string",
           "minLength": 1,
           "maxLength": 120,
-          "description": "Display name of the Polish city or landmark."
+          "description": "Display name of the city or landmark."
         },
         "voivodeship": {
           "type": "string",
           "minLength": 1,
           "maxLength": 60,
-          "description": "Polish voivodeship name."
+          "description": "Polish voivodeship name or European administrative region / country label."
         },
         "lat": {
           "type": "number",
-          "description": "WGS84 latitude within Poland bounds (48.5 to 55.5)."
+          "description": "WGS84 latitude bounded by catalogKey (poland: 48.5 to 55.5; europe: 34.0 to 72.0)."
         },
         "lng": {
           "type": "number",
-          "description": "WGS84 longitude within Poland bounds (13.5 to 25.0)."
+          "description": "WGS84 longitude bounded by catalogKey (poland: 13.5 to 25.0; europe: -25.0 to 45.0)."
         },
         "imageUrl": {
           "type": "string",
@@ -304,11 +304,31 @@
         },
         "isClassicOffline": {
           "type": "boolean",
-          "description": "Whether this location belongs to the 20 offline-bundled classic scenes."
+          "description": "Whether this location belongs to the offline-bundled classic scenes."
         },
         "orderIndex": {
           "type": "integer",
           "description": "Deterministic canonical sort index (0 to 100000) ensuring identical Daily Challenge decks across clients."
+        },
+        "countryCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 2,
+          "pattern": "^[A-Z]{2}$",
+          "description": "Optional ISO 3166-1 alpha-2 country code (defaults to 'PL' for Poland catalog)."
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["easy", "medium", "hard"],
+          "description": "Optional gameplay difficulty tier (defaults to 'medium')."
+        },
+        "tags": {
+          "type": "array",
+          "description": "Optional bounded list of up to 5 thematic tags (each 1..32 characters)."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Optional soft-enable flag (defaults to true; inactive entries are excluded from gameplay draws)."
         },
         "createdAt": {
           "type": "string",
@@ -340,7 +360,7 @@
     },
     "CatalogMeta": {
       "title": "CatalogMeta",
-      "description": "Lightweight version manifest document for quota-efficient IndexedDB cache invalidation (1 Firestore read on startup).",
+      "description": "Lightweight version manifest document per catalog (poland, europe) for quota-efficient IndexedDB cache invalidation (1 Firestore read on startup).",
       "type": "object",
       "properties": {
         "id": {
@@ -348,7 +368,7 @@
           "minLength": 1,
           "maxLength": 64,
           "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "Catalog identifier matching document ID (e.g., poland)."
+          "description": "Catalog identifier matching document ID (e.g., poland or europe)."
         },
         "version": {
           "type": "integer",
@@ -356,7 +376,7 @@
         },
         "totalCount": {
           "type": "integer",
-          "description": "Total number of active locations currently stored in /locations."
+          "description": "Total number of locations currently stored in /locations for this catalogKey."
         },
         "updatedBy": {
           "type": "string",

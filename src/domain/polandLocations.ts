@@ -383,6 +383,11 @@ const RAW_CATALOG_BOUNDARY: unknown = rawCatalogData;
 const INDEXED_FEATURED_LOCATIONS: readonly PolandLocation[] = FEATURED_OFFLINE_LOCATIONS.map(
   (loc, index) => ({
     ...loc,
+    catalogKey: 'poland' as const,
+    countryCode: 'PL',
+    difficulty: 'easy' as const,
+    tags: [],
+    isActive: true,
     isClassicOffline: true,
     orderIndex: index,
   }),
@@ -405,6 +410,11 @@ const HYDRATED_CATALOG_LOCATIONS: readonly PolandLocation[] = Array.isArray(RAW_
           regionCategory: category,
           isClassicOffline: false,
           orderIndex,
+          catalogKey: 'poland',
+          countryCode: 'PL',
+          difficulty: 'medium',
+          tags: [],
+          isActive: true,
         };
       }
       const category = decodeRegionCategory(tuple[8]);
@@ -420,6 +430,11 @@ const HYDRATED_CATALOG_LOCATIONS: readonly PolandLocation[] = Array.isArray(RAW_
         regionCategory: category,
         isClassicOffline: false,
         orderIndex,
+        catalogKey: 'poland',
+        countryCode: 'PL',
+        difficulty: 'medium',
+        tags: [],
+        isActive: true,
       };
     })
   : [];
@@ -445,7 +460,9 @@ export function getLocationsForPool(
   isOnline = true,
   catalog: readonly PolandLocation[] = POLAND_LOCATIONS,
 ): readonly PolandLocation[] {
-  const source = catalog.length > 0 ? catalog : POLAND_LOCATIONS;
+  const rawSource = catalog.length > 0 ? catalog : POLAND_LOCATIONS;
+  const activeOnly = rawSource.filter((loc) => loc.isActive !== false);
+  const source = activeOnly.length > 0 ? activeOnly : rawSource;
   if (!isOnline || filter === 'classic_20') {
     const classic = source.filter((loc) => loc.isClassicOffline === true);
     return classic.length > 0 ? classic : INDEXED_FEATURED_LOCATIONS;

@@ -8,6 +8,10 @@ export interface GeoCoordinate {
   readonly lng: number;
 }
 
+export type CatalogKey = 'poland' | 'europe';
+
+export type LocationDifficulty = 'easy' | 'medium' | 'hard';
+
 export type RegionCategory = 'miasto' | 'gory' | 'morze' | 'zabytek' | 'nad_woda';
 
 export type LocationPoolFilter =
@@ -34,6 +38,11 @@ export interface PolandLocation {
   readonly regionCategory: RegionCategory;
   readonly isClassicOffline?: boolean;
   readonly orderIndex?: number;
+  readonly catalogKey?: CatalogKey;
+  readonly countryCode?: string;
+  readonly difficulty?: LocationDifficulty;
+  readonly tags?: readonly string[];
+  readonly isActive?: boolean;
 }
 
 export type HintLevel = 0 | 1 | 2;
@@ -168,6 +177,7 @@ export interface CatalogMetaSnapshot {
 }
 
 export interface LoadedLocationCatalog {
+  readonly catalogKey: CatalogKey;
   readonly locations: readonly PolandLocation[];
   readonly source: LocationCatalogSource;
   readonly version: number | null;
@@ -176,9 +186,10 @@ export interface LoadedLocationCatalog {
 }
 
 export type LocationCatalogState =
-  | {readonly status: 'loading'}
+  | {readonly status: 'loading'; readonly catalogKey?: CatalogKey}
   | {
       readonly status: 'ready';
+      readonly catalogKey: CatalogKey;
       readonly source: LocationCatalogSource;
       readonly version: number | null;
       readonly totalCount: number;
@@ -187,6 +198,7 @@ export type LocationCatalogState =
     }
   | {
       readonly status: 'error';
+      readonly catalogKey: CatalogKey;
       readonly message: string;
       readonly source: LocationCatalogSource;
       readonly totalCount: number;
@@ -194,6 +206,7 @@ export type LocationCatalogState =
 
 export interface LocationUpsertInput {
   readonly id: string;
+  readonly catalogKey: CatalogKey;
   readonly name: string;
   readonly voivodeship: string;
   readonly lat: number;
@@ -203,6 +216,10 @@ export interface LocationUpsertInput {
   readonly funFact: string;
   readonly regionCategory: RegionCategory;
   readonly isClassicOffline: boolean;
+  readonly countryCode: string;
+  readonly difficulty: LocationDifficulty;
+  readonly tags: readonly string[];
+  readonly isActive: boolean;
 }
 
 export interface StoredGameSummary {
@@ -340,22 +357,28 @@ export interface IGamePersistenceRepository {
 
 export interface ILocationCatalogRepository {
   loadCatalog(options?: {
+    readonly catalogKey?: CatalogKey;
     readonly forceRefresh?: boolean;
     readonly signal?: AbortSignal;
   }): Promise<Result<LoadedLocationCatalog, string>>;
-  fetchCatalogMeta(): Promise<Result<CatalogMetaSnapshot | null, string>>;
+  fetchCatalogMeta(catalogKey?: CatalogKey): Promise<Result<CatalogMetaSnapshot | null, string>>;
   migrateSeedLocations(
     seedLocations: readonly PolandLocation[],
     actorUid: string,
     onProgress?: (processed: number, total: number) => void,
     signal?: AbortSignal,
+    catalogKey?: CatalogKey,
   ): Promise<Result<CatalogMetaSnapshot, string>>;
   upsertLocation(
     input: LocationUpsertInput,
     actorUid: string,
     nextOrderIndex: number,
   ): Promise<Result<PolandLocation, string>>;
-  deleteLocation(locationId: string, actorUid: string): Promise<Result<void, string>>;
+  deleteLocation(
+    locationId: string,
+    actorUid: string,
+    catalogKey?: CatalogKey,
+  ): Promise<Result<void, string>>;
 }
 
 export interface IAiExplorerGateway {

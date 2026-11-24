@@ -9,19 +9,19 @@
 5. **Cross-Type Hijack Prevention on `/rankings`**: Guests can NEVER create or update a document with `playerType == 'authenticated'`, nor mutate an existing `authenticated` document. Daily Challenge entries (`gameMode == 'daily'`) are immutable after creation (one official record per actor per day). Deletion of ranking entries is forbidden for all clients.
 6. **Score & Array Bounds**: `bestScore` is strictly bounded to `[0, 25000]`. `rawScore <= roundsCount * 5000` (max `500000`) and `roundLocations`/`roundScores`/`roundDistances` are bounded to `<= 100` elements matching `roundsCount in [3, 5, 10, 15, 20, 30, 50, 100]`. Guest nicknames are strictly bounded to `[2, 30]` characters; authenticated display names to `[1, 60]` characters.
 7. **Temporal Integrity & Immutability**: `createdAt` must equal `request.time` on create and remain immutable on update. `updatedAt` must equal `request.time` on both create and update.
-8. **Admin-Only Location Catalog Governance**: `/locations/{locationId}` and `/catalogMeta/{catalogId}` are admin-writable only (`isAdmin()`) with strict Poland WGS84 coordinate bounds.
+8. **Admin-Only Multi-Catalog Location Governance**: `/locations/{locationId}` and `/catalogMeta/{catalogId}` are admin-writable only (`isAdmin()`). `catalogKey` must be `'poland'` or `'europe'`, with conditional WGS84 bounding boxes (`poland`: lat `48.5–55.5`, lng `13.5–25.0`; `europe`: lat `34.0–72.0`, lng `-25.0–45.0`). Optional enriched fields (`countryCode` ISO-2, `difficulty in ['easy', 'medium', 'hard']`, `tags` bounded to `<= 5` items with `<= 32` chars, `isActive` bool) are strictly type- and size-guarded when present.
 
 ## 2. The Dirty Dozen Adversarial Payloads (Must Return PERMISSION_DENIED)
 
 1. **Identity Spoofing on Authenticated Ranking**: User `alice` writes `/rankings/auth_bob_standard` with `actorId: "bob"`, `playerType: "authenticated"`.
 2. **Guest Hijacking Authenticated Record**: Unauthenticated guest attempts `update` on existing `/rankings/auth_alice_standard` or creates `playerType: "authenticated"`.
-3. **Shadow / Ghost Field Injection**: Guest creates `/rankings/guest_abc_standard` with extra field `isAdmin: true` or `email: "a@b.com"`.
+3. **Shadow / Ghost Field Injection**: Guest creates `/rankings/guest_abc_standard` with extra field `isAdmin: true`, or admin writes `/locations/warszawa` with unapproved field `secretNote: "x"`.
 4. **Score Inflation Attack**: Guest or user writes `/rankings/guest_abc_standard` with `bestScore: 999999` or `rawScore: 50000` for `roundsCount: 5`.
 5. **Daily Challenge Overwrite Attack**: Guest or user attempts `update` on existing `/rankings/guest_abc_daily_2026-11-20` to replace their first daily score.
 6. **ID Mismatch / ID Poisoning Attack**: Guest writes `/rankings/custom_bad_id` that does not match `guest_{actorId}_standard` or contains illegal characters.
 7. **Timestamp Forgery**: Guest submits a client-forged `createdAt` or `updatedAt` timestamp instead of `serverTimestamp()`.
-8. **Immutable Field Mutation on Update**: Guest updates `/rankings/guest_abc_standard` trying to alter `playerType`, `actorId`, `gameMode`, `dateKey`, or `createdAt`.
-9. **Guest Photo / PII Injection**: Guest submits non-empty `photoUrl: "https://evil.test/x.png"` on a `playerType: "guest"` entry.
-10. **Oversized Nickname Poisoning**: Guest submits a 200-character `playerName` or a 1-character nickname.
+8. **Immutable Field Mutation on Update**: Guest updates `/rankings/guest_abc_standard` trying to alter `playerType`, `actorId`, `gameMode`, `dateKey`, or `createdAt`, or admin mutates `catalogKey` on an existing `/locations/{id}`.
+9. **Cross-Catalog Coordinate Poisoning**: Admin attempts to write `catalogKey: "poland"` with Paris coordinates (`lat: 48.85, lng: 2.35`) or `catalogKey: "europe"` with out-of-continent coordinates (`lat: -33.8, lng: 151.2`).
+10. **Oversized Tag Array / Invalid Metadata Poisoning**: Admin submits `tags` with 6+ entries, `countryCode: "pol"`, or `difficulty: "impossible"`; or guest submits a 200-character `playerName`.
 11. **Ranking Deletion Attack**: Any user or guest attempts `delete` on `/rankings/{rankingId}`.
-12. **Unfiltered Scraping / Non-Admin Location Write**: Client attempts `list` on `/rankings` without valid `dateKey` filter, or non-admin writes `/locations/warszawa`.
+12. **Unfiltered Scraping / Non-Admin Location Write**: Client attempts `list` on `/rankings` without valid `dateKey` filter, `list` on `/locations` with unknown `catalogKey`, or non-admin writes `/locations/warszawa`.

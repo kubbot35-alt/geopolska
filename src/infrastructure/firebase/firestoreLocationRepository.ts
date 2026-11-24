@@ -14,12 +14,19 @@ import {
 } from 'firebase/firestore';
 import {z} from 'zod';
 import {
+  clampCoordinatesForCatalog,
+  normalizeCountryCode,
+  normalizeLocationTags,
+  validateCoordinatesForCatalog,
+} from '../../domain/catalogSchema';
+import {
   POLAND_LOCATIONS,
   buildFreePhotoProxyUrl,
   slugifyLocationId,
   sortLocationsDeterministically,
 } from '../../domain/polandLocations';
 import type {
+  CatalogKey,
   CatalogMetaSnapshot,
   ILocationCatalogRepository,
   LoadedLocationCatalog,
@@ -35,23 +42,31 @@ import {OperationType, db, handleFirestoreError} from './firebaseClient';
 
 const LOCATIONS_COLLECTION = 'locations';
 const CATALOG_META_COLLECTION = 'catalogMeta';
-const CATALOG_KEY = 'poland';
+const DEFAULT_CATALOG_KEY: CatalogKey = 'poland';
 const MIGRATION_BATCH_SIZE = 350;
 
-const FirestoreLocationDocSchema = z.object({
-  id: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/),
-  catalogKey: z.literal(CATALOG_KEY),
-  name: z.string().min(1).max(120),
-  voivodeship: z.string().min(1).max(60),
-  lat: z.number().min(48.5).max(55.5),
-  lng: z.number().min(13.5).max(25.0),
-  imageUrl: z.string().min(1).max(500),
-  hint: z.string().min(1).max(500),
-  funFact: z.string().min(1).max(600),
-  regionCategory: z.enum(['miasto', 'gory', 'morze', 'zabytek', 'nad_woda']),
-  isClassicOffline: z.boolean(),
-  orderIndex: z.number().int().min(0).max(100000),
-});
+const FirestoreLocationDocSchema = z
+  .object({
+    id: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/),
+    catalogKey: z.enum(['poland', 'europe']),
+    name: z.string().min(1).max(120),
+    voivodeship: z.string().min(1).max(60),
+    lat: z.number(),
+    lng: z.number(),
+    imageUrl: z.string().min(1).max(500),
+    hint: z.string().min(1).max(500),
+    funFact: z.string().min(1).max(600),
+    regionCategory: z.enum(['miasto', 'gory', 'morze', 'zabytek', 'nad_woda']),
+    isClassicOffline: z.boolean(),
+    orderIndex: z.number().int().min(0).max(100000),
+    countryCode: z.string().regex(/^[A-Z]{2}$/).optional(),
+    difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
+    tags: z.array(z.string().min(1).max(32)).max(5).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((val) => validateCoordinatesForCatalog(val.catalogKey, val.lat, val.lng), {
+    message: 'Coordinates outside catalog bounding box',
+  });
 
 function timestampToIso(value: unknown): string {
   if (value instanceof Timestamp) {
@@ -77,11 +92,15 @@ function isPermissionError(error: unknown): boolean {
 }
 
 function sanitizeLocationPayload(input: LocationUpsertInput, orderIndex: number) {
+  const catalogKey: CatalogKey = input.catalogKey ?? DEFAULT_CATALOG_KEY;
   const cleanId = slugifyLocationId(input.id || input.name).slice(0, 128);
   const cleanName = input.name.trim().slice(0, 120);
   const cleanVoivodeship = input.voivodeship.trim().slice(0, 60);
-  const cleanLat = Math.max(48.5, Math.min(55.5, Number(input.lat.toFixed(5))));
-  const cleanLng = Math.max(13.5, Math.min(25.0, Number(input.lng.toFixed(5))));
+  const {lat: cleanLat, lng: cleanLng} = clampCoordinatesForCatalog(
+    catalogKey,
+    input.lat,
+    input.lng,
+  );
   const rawImage = input.imageUrl.trim();
   const cleanImageUrl = (
     rawImage.length > 0
@@ -91,10 +110,14 @@ function sanitizeLocationPayload(input: LocationUpsertInput, orderIndex: number)
   const cleanHint = input.hint.trim().slice(0, 500);
   const cleanFunFact = input.funFact.trim().slice(0, 600);
   const clampedOrderIndex = Math.max(0, Math.min(100000, Math.round(orderIndex)));
+  const cleanCountryCode = normalizeCountryCode(input.countryCode, catalogKey);
+  const cleanDifficulty = input.difficulty ?? 'medium';
+  const cleanTags = [...normalizeLocationTags(input.tags)];
+  const cleanIsActive = input.isActive !== false;
 
   return {
     id: cleanId,
-    catalogKey: CATALOG_KEY as typeof CATALOG_KEY,
+    catalogKey,
     name: cleanName,
     voivodeship: cleanVoivodeship,
     lat: cleanLat,
@@ -103,15 +126,19 @@ function sanitizeLocationPayload(input: LocationUpsertInput, orderIndex: number)
     hint: cleanHint,
     funFact: cleanFunFact,
     regionCategory: input.regionCategory,
-    isClassicOffline: Boolean(input.isClassicOffline),
+    isClassicOffline: catalogKey === 'poland' ? Boolean(input.isClassicOffline) : false,
     orderIndex: clampedOrderIndex,
+    countryCode: cleanCountryCode,
+    difficulty: cleanDifficulty,
+    tags: cleanTags,
+    isActive: cleanIsActive,
   };
 }
 
-async function readRemoteCatalogMeta(): Promise<CatalogMetaSnapshot | null> {
-  const metaPath = `${CATALOG_META_COLLECTION}/${CATALOG_KEY}`;
+async function readRemoteCatalogMeta(catalogKey: CatalogKey): Promise<CatalogMetaSnapshot | null> {
+  const metaPath = `${CATALOG_META_COLLECTION}/${catalogKey}`;
   try {
-    const snap = await getDoc(doc(db, CATALOG_META_COLLECTION, CATALOG_KEY));
+    const snap = await getDoc(doc(db, CATALOG_META_COLLECTION, catalogKey));
     if (!snap.exists()) {
       return null;
     }
@@ -135,11 +162,13 @@ async function readRemoteCatalogMeta(): Promise<CatalogMetaSnapshot | null> {
   }
 }
 
-async function fetchAllRemoteLocations(): Promise<readonly PolandLocation[]> {
+async function fetchAllRemoteLocations(
+  catalogKey: CatalogKey,
+): Promise<readonly PolandLocation[]> {
   try {
     const q = query(
       collection(db, LOCATIONS_COLLECTION),
-      where('catalogKey', '==', CATALOG_KEY),
+      where('catalogKey', '==', catalogKey),
     );
     const snapshot = await getDocs(q);
     const parsedLocations: PolandLocation[] = [];
@@ -149,6 +178,7 @@ async function fetchAllRemoteLocations(): Promise<readonly PolandLocation[]> {
       if (parsed.success) {
         parsedLocations.push({
           id: parsed.data.id,
+          catalogKey: parsed.data.catalogKey,
           name: parsed.data.name,
           voivodeship: parsed.data.voivodeship,
           lat: parsed.data.lat,
@@ -159,6 +189,10 @@ async function fetchAllRemoteLocations(): Promise<readonly PolandLocation[]> {
           regionCategory: parsed.data.regionCategory,
           isClassicOffline: parsed.data.isClassicOffline,
           orderIndex: parsed.data.orderIndex,
+          countryCode: parsed.data.countryCode ?? (catalogKey === 'poland' ? 'PL' : 'FR'),
+          difficulty: parsed.data.difficulty ?? 'medium',
+          tags: parsed.data.tags ?? [],
+          isActive: parsed.data.isActive ?? true,
         });
       }
     });
@@ -173,11 +207,12 @@ async function fetchAllRemoteLocations(): Promise<readonly PolandLocation[]> {
 }
 
 async function bumpRemoteCatalogMeta(
+  catalogKey: CatalogKey,
   actorUid: string,
   totalCount: number,
 ): Promise<CatalogMetaSnapshot> {
-  const metaPath = `${CATALOG_META_COLLECTION}/${CATALOG_KEY}`;
-  const metaRef = doc(db, CATALOG_META_COLLECTION, CATALOG_KEY);
+  const metaPath = `${CATALOG_META_COLLECTION}/${catalogKey}`;
+  const metaRef = doc(db, CATALOG_META_COLLECTION, catalogKey);
   const clampedCount = Math.max(0, Math.min(100000, Math.round(totalCount)));
 
   try {
@@ -185,7 +220,7 @@ async function bumpRemoteCatalogMeta(
     if (!existingSnap.exists()) {
       const nextVersion = 1;
       await setDoc(metaRef, {
-        id: CATALOG_KEY,
+        id: catalogKey,
         version: nextVersion,
         totalCount: clampedCount,
         updatedBy: actorUid,
@@ -193,7 +228,7 @@ async function bumpRemoteCatalogMeta(
         updatedAt: serverTimestamp(),
       });
       return {
-        id: CATALOG_KEY,
+        id: catalogKey,
         version: nextVersion,
         totalCount: clampedCount,
         updatedBy: actorUid,
@@ -213,7 +248,7 @@ async function bumpRemoteCatalogMeta(
     });
 
     return {
-      id: CATALOG_KEY,
+      id: catalogKey,
       version: nextVersion,
       totalCount: clampedCount,
       updatedBy: actorUid,
@@ -228,9 +263,11 @@ async function bumpRemoteCatalogMeta(
 }
 
 export class FirestoreLocationRepository implements ILocationCatalogRepository {
-  async fetchCatalogMeta(): Promise<Result<CatalogMetaSnapshot | null, string>> {
+  async fetchCatalogMeta(
+    catalogKey: CatalogKey = DEFAULT_CATALOG_KEY,
+  ): Promise<Result<CatalogMetaSnapshot | null, string>> {
     try {
-      const meta = await readRemoteCatalogMeta();
+      const meta = await readRemoteCatalogMeta(catalogKey);
       return {ok: true, value: meta};
     } catch (error: unknown) {
       if (isOfflineNetworkError(error)) {
@@ -244,17 +281,20 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
   }
 
   async loadCatalog(options?: {
+    readonly catalogKey?: CatalogKey;
     readonly forceRefresh?: boolean;
     readonly signal?: AbortSignal;
   }): Promise<Result<LoadedLocationCatalog, string>> {
+    const catalogKey: CatalogKey = options?.catalogKey ?? DEFAULT_CATALOG_KEY;
     const forceRefresh = options?.forceRefresh ?? false;
-    const cached = await readCachedLocationsCatalog();
+    const cached = await readCachedLocationsCatalog(catalogKey);
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      if (cached && cached.locations.length > 0) {
+      if (cached && (cached.locations.length > 0 || catalogKey === 'europe')) {
         return {
           ok: true,
           value: {
+            catalogKey,
             locations: sortLocationsDeterministically(cached.locations),
             source: 'indexeddb_cache',
             version: cached.version,
@@ -266,7 +306,8 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
       return {
         ok: true,
         value: {
-          locations: POLAND_LOCATIONS,
+          catalogKey,
+          locations: catalogKey === 'poland' ? POLAND_LOCATIONS : [],
           source: 'seed_fallback',
           version: null,
           remoteCount: null,
@@ -276,7 +317,7 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
     }
 
     try {
-      const remoteMeta = await readRemoteCatalogMeta();
+      const remoteMeta = await readRemoteCatalogMeta(catalogKey);
       if (options?.signal?.aborted) {
         return {ok: false, error: 'Przerwano ładowanie katalogu.'};
       }
@@ -292,6 +333,7 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
           return {
             ok: true,
             value: {
+              catalogKey,
               locations: sortLocationsDeterministically(cached.locations),
               source: 'indexeddb_cache',
               version: cached.version,
@@ -301,16 +343,17 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
           };
         }
 
-        const remoteLocations = await fetchAllRemoteLocations();
+        const remoteLocations = await fetchAllRemoteLocations(catalogKey);
         if (options?.signal?.aborted) {
           return {ok: false, error: 'Przerwano ładowanie katalogu.'};
         }
 
         if (remoteLocations.length > 0) {
-          await writeCachedLocationsCatalog(remoteMeta.version, remoteLocations);
+          await writeCachedLocationsCatalog(remoteMeta.version, remoteLocations, catalogKey);
           return {
             ok: true,
             value: {
+              catalogKey,
               locations: remoteLocations,
               source: 'firestore',
               version: remoteMeta.version,
@@ -321,10 +364,25 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
         }
       }
 
-      // Remote collection not yet populated — keep gameplay ready using bundled seed
+      if (catalogKey === 'europe') {
+        return {
+          ok: true,
+          value: {
+            catalogKey,
+            locations: [],
+            source: 'firestore',
+            version: remoteMeta?.version ?? null,
+            remoteCount: 0,
+            isSyncedWithCloud: Boolean(remoteMeta),
+          },
+        };
+      }
+
+      // Remote Poland collection not yet populated — keep gameplay ready using bundled seed
       return {
         ok: true,
         value: {
+          catalogKey,
           locations: POLAND_LOCATIONS,
           source: 'seed_fallback',
           version: remoteMeta?.version ?? null,
@@ -333,10 +391,11 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
         },
       };
     } catch (error: unknown) {
-      if (cached && cached.locations.length > 0) {
+      if (cached && (cached.locations.length > 0 || catalogKey === 'europe')) {
         return {
           ok: true,
           value: {
+            catalogKey,
             locations: sortLocationsDeterministically(cached.locations),
             source: 'indexeddb_cache',
             version: cached.version,
@@ -360,6 +419,7 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
     actorUid: string,
     onProgress?: (processed: number, total: number) => void,
     signal?: AbortSignal,
+    catalogKey: CatalogKey = DEFAULT_CATALOG_KEY,
   ): Promise<Result<CatalogMetaSnapshot, string>> {
     if (seedLocations.length === 0) {
       return {ok: false, error: 'Brak lokacji do migracji.'};
@@ -369,11 +429,13 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
     }
 
     try {
-      const existingRemote = await fetchAllRemoteLocations();
+      const existingRemote = await fetchAllRemoteLocations(catalogKey);
       if (signal?.aborted) {
         return {ok: false, error: 'Migracja została przerwana.'};
       }
-      const existingIds = new Set<string>(existingRemote.map((loc) => loc.id));
+      const existingById = new Map<string, PolandLocation>(
+        existingRemote.map((loc) => [loc.id, loc]),
+      );
 
       const normalizedList: PolandLocation[] = [];
       let processed = 0;
@@ -390,11 +452,13 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
 
         for (let offset = 0; offset < chunk.length; offset += 1) {
           const rawLoc = chunk[offset];
+          const existingLoc = existingById.get(rawLoc.id);
           const orderIndex =
             typeof rawLoc.orderIndex === 'number' ? rawLoc.orderIndex : start + offset;
           const sanitized = sanitizeLocationPayload(
             {
               id: rawLoc.id,
+              catalogKey,
               name: rawLoc.name,
               voivodeship: rawLoc.voivodeship,
               lat: rawLoc.lat,
@@ -404,12 +468,18 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
               funFact: rawLoc.funFact,
               regionCategory: rawLoc.regionCategory,
               isClassicOffline: Boolean(rawLoc.isClassicOffline),
+              countryCode:
+                existingLoc?.countryCode ?? rawLoc.countryCode ?? (catalogKey === 'poland' ? 'PL' : 'FR'),
+              difficulty: existingLoc?.difficulty ?? rawLoc.difficulty ?? 'medium',
+              tags: existingLoc?.tags ?? rawLoc.tags ?? [],
+              isActive: existingLoc?.isActive ?? rawLoc.isActive ?? true,
             },
             orderIndex,
           );
 
           normalizedList.push({
             id: sanitized.id,
+            catalogKey: sanitized.catalogKey,
             name: sanitized.name,
             voivodeship: sanitized.voivodeship,
             lat: sanitized.lat,
@@ -420,10 +490,14 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
             regionCategory: sanitized.regionCategory,
             isClassicOffline: sanitized.isClassicOffline,
             orderIndex: sanitized.orderIndex,
+            countryCode: sanitized.countryCode,
+            difficulty: sanitized.difficulty,
+            tags: sanitized.tags,
+            isActive: sanitized.isActive,
           });
 
           const docRef = doc(db, LOCATIONS_COLLECTION, sanitized.id);
-          if (existingIds.has(sanitized.id)) {
+          if (existingById.has(sanitized.id)) {
             batch.update(docRef, {
               name: sanitized.name,
               voivodeship: sanitized.voivodeship,
@@ -435,6 +509,10 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
               regionCategory: sanitized.regionCategory,
               isClassicOffline: sanitized.isClassicOffline,
               orderIndex: sanitized.orderIndex,
+              countryCode: sanitized.countryCode,
+              difficulty: sanitized.difficulty,
+              tags: sanitized.tags,
+              isActive: sanitized.isActive,
               updatedAt: serverTimestamp(),
             });
           } else {
@@ -467,8 +545,8 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
         ...extraCustomLocations,
       ]);
 
-      const meta = await bumpRemoteCatalogMeta(actorUid, mergedCatalog.length);
-      await writeCachedLocationsCatalog(meta.version, mergedCatalog);
+      const meta = await bumpRemoteCatalogMeta(catalogKey, actorUid, mergedCatalog.length);
+      await writeCachedLocationsCatalog(meta.version, mergedCatalog, catalogKey);
 
       return {ok: true, value: meta};
     } catch (error: unknown) {
@@ -493,15 +571,23 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
 
     const sanitized = sanitizeLocationPayload(input, nextOrderIndex);
     if (!sanitized.name || !sanitized.voivodeship || !sanitized.hint || !sanitized.funFact) {
-      return {ok: false, error: 'Uzupełnij nazwę, województwo, podpowiedź oraz ciekawostkę.'};
+      return {ok: false, error: 'Uzupełnij nazwę, region/województwo, podpowiedź oraz ciekawostkę.'};
     }
 
+    const catalogKey = sanitized.catalogKey;
     const docPath = `${LOCATIONS_COLLECTION}/${sanitized.id}`;
     const docRef = doc(db, LOCATIONS_COLLECTION, sanitized.id);
 
     try {
       const existingSnap = await getDoc(docRef);
       const isExisting = existingSnap.exists();
+      if (isExisting && existingSnap.data().catalogKey !== catalogKey) {
+        return {
+          ok: false,
+          error: `Lokacja o ID „${sanitized.id}” istnieje już w innym katalogu (${String(existingSnap.data().catalogKey)}). Użyj innej nazwy lub identyfikatora.`,
+        };
+      }
+
       const preservedOrderIndex =
         isExisting && typeof existingSnap.data().orderIndex === 'number'
           ? Math.round(existingSnap.data().orderIndex)
@@ -519,6 +605,10 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
           regionCategory: sanitized.regionCategory,
           isClassicOffline: sanitized.isClassicOffline,
           orderIndex: preservedOrderIndex,
+          countryCode: sanitized.countryCode,
+          difficulty: sanitized.difficulty,
+          tags: sanitized.tags,
+          isActive: sanitized.isActive,
           updatedAt: serverTimestamp(),
         });
       } else {
@@ -532,6 +622,7 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
 
       const savedLocation: PolandLocation = {
         id: sanitized.id,
+        catalogKey,
         name: sanitized.name,
         voivodeship: sanitized.voivodeship,
         lat: sanitized.lat,
@@ -542,23 +633,27 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
         regionCategory: sanitized.regionCategory,
         isClassicOffline: sanitized.isClassicOffline,
         orderIndex: preservedOrderIndex,
+        countryCode: sanitized.countryCode,
+        difficulty: sanitized.difficulty,
+        tags: sanitized.tags,
+        isActive: sanitized.isActive,
       };
 
-      const cached = await readCachedLocationsCatalog();
+      const cached = await readCachedLocationsCatalog(catalogKey);
       const baseList = cached?.locations ?? [];
       const nextList = sortLocationsDeterministically([
         ...baseList.filter((item) => item.id !== savedLocation.id),
         savedLocation,
       ]);
 
-      const remoteMeta = await readRemoteCatalogMeta();
+      const remoteMeta = await readRemoteCatalogMeta(catalogKey);
       const nextCount = isExisting
         ? Math.max(remoteMeta?.totalCount ?? nextList.length, nextList.length)
         : (remoteMeta?.totalCount ?? baseList.length) + 1;
 
-      const updatedMeta = await bumpRemoteCatalogMeta(actorUid, nextCount);
+      const updatedMeta = await bumpRemoteCatalogMeta(catalogKey, actorUid, nextCount);
       if (nextList.length === updatedMeta.totalCount) {
-        await writeCachedLocationsCatalog(updatedMeta.version, nextList);
+        await writeCachedLocationsCatalog(updatedMeta.version, nextList, catalogKey);
       }
 
       return {ok: true, value: savedLocation};
@@ -574,7 +669,11 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
     }
   }
 
-  async deleteLocation(locationId: string, actorUid: string): Promise<Result<void, string>> {
+  async deleteLocation(
+    locationId: string,
+    actorUid: string,
+    catalogKey: CatalogKey = DEFAULT_CATALOG_KEY,
+  ): Promise<Result<void, string>> {
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       return {ok: false, error: 'Usuwanie lokacji wymaga połączenia z internetem.'};
     }
@@ -583,13 +682,13 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
 
     try {
       await deleteDoc(docRef);
-      const cached = await readCachedLocationsCatalog();
+      const cached = await readCachedLocationsCatalog(catalogKey);
       const nextList = (cached?.locations ?? []).filter((item) => item.id !== locationId);
-      const remoteMeta = await readRemoteCatalogMeta();
+      const remoteMeta = await readRemoteCatalogMeta(catalogKey);
       const nextCount = Math.max(0, (remoteMeta?.totalCount ?? nextList.length + 1) - 1);
-      const updatedMeta = await bumpRemoteCatalogMeta(actorUid, nextCount);
-      if (nextList.length === updatedMeta.totalCount && nextList.length > 0) {
-        await writeCachedLocationsCatalog(updatedMeta.version, nextList);
+      const updatedMeta = await bumpRemoteCatalogMeta(catalogKey, actorUid, nextCount);
+      if (nextList.length === updatedMeta.totalCount) {
+        await writeCachedLocationsCatalog(updatedMeta.version, nextList, catalogKey);
       }
       return {ok: true, value: undefined};
     } catch (error: unknown) {

@@ -327,7 +327,20 @@ service cloud.firestore {
       data.updatedAt is timestamp;
     }
 
-    // Validation Blueprint: LocationDocument (public atlas, admin-writable, Poland WGS84 bounds)
+    // Validation Blueprint: LocationDocument (public multi-catalog atlas: poland & europe, admin-writable)
+    function isValidCatalogBounds(catalogKey, lat, lng) {
+      return (catalogKey == 'poland'
+          && lat >= 48.5
+          && lat <= 55.5
+          && lng >= 13.5
+          && lng <= 25.0)
+        || (catalogKey == 'europe'
+          && lat >= 34.0
+          && lat <= 72.0
+          && lng >= -25.0
+          && lng <= 45.0);
+    }
+
     function isValidLocationDocument(data, locationId) {
       return data.keys().hasAll([
         'id',
@@ -358,6 +371,10 @@ service cloud.firestore {
         'regionCategory',
         'isClassicOffline',
         'orderIndex',
+        'countryCode',
+        'difficulty',
+        'tags',
+        'isActive',
         'createdAt',
         'updatedAt'
       ]) &&
@@ -365,7 +382,7 @@ service cloud.firestore {
       data.id == locationId &&
       data.catalogKey is string &&
       data.catalogKey.size() == 6 &&
-      data.catalogKey == 'poland' &&
+      data.catalogKey in ['poland', 'europe'] &&
       data.name is string &&
       data.name.size() >= 1 &&
       data.name.size() <= 120 &&
@@ -373,11 +390,8 @@ service cloud.firestore {
       data.voivodeship.size() >= 1 &&
       data.voivodeship.size() <= 60 &&
       data.lat is number &&
-      data.lat >= 48.5 &&
-      data.lat <= 55.5 &&
       data.lng is number &&
-      data.lng >= 13.5 &&
-      data.lng <= 25.0 &&
+      isValidCatalogBounds(data.catalogKey, data.lat, data.lng) &&
       data.imageUrl is string &&
       data.imageUrl.size() >= 1 &&
       data.imageUrl.size() <= 500 &&
@@ -395,6 +409,23 @@ service cloud.firestore {
       data.orderIndex is int &&
       data.orderIndex >= 0 &&
       data.orderIndex <= 100000 &&
+      (!('countryCode' in data)
+        || (data.countryCode is string
+          && data.countryCode.size() == 2
+          && data.countryCode.matches('^[A-Z]{2}$'))) &&
+      (!('difficulty' in data)
+        || (data.difficulty is string
+          && data.difficulty.size() >= 4
+          && data.difficulty.size() <= 12
+          && data.difficulty in ['easy', 'medium', 'hard'])) &&
+      (!('tags' in data)
+        || (data.tags is list
+          && data.tags.size() <= 5
+          && (data.tags.size() == 0
+            || (data.tags[0] is string
+              && data.tags[0].size() >= 1
+              && data.tags[0].size() <= 32)))) &&
+      (!('isActive' in data) || data.isActive is bool) &&
       data.createdAt is timestamp &&
       data.updatedAt is timestamp;
     }
@@ -596,11 +627,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Collection 6: Public GeoPolska location atlas (admin-managed, zero PII)
+    // Collection 6: Public GeoPolska / GeoEuropa location atlas (admin-managed, zero PII)
     match /locations/{locationId} {
       allow get: if isValidId(locationId)
-        && (resource == null || existing().catalogKey == 'poland');
-      allow list: if resource.data.catalogKey == 'poland';
+        && (resource == null
+          || (existing().catalogKey is string
+            && existing().catalogKey.size() == 6
+            && existing().catalogKey in ['poland', 'europe']));
+      allow list: if resource.data.catalogKey is string
+        && resource.data.catalogKey.size() == 6
+        && resource.data.catalogKey in ['poland', 'europe'];
       allow create: if isVerifiedUser()
         && isValidId(locationId)
         && isValidLocationDocument(incoming(), locationId)
@@ -626,6 +662,10 @@ service cloud.firestore {
           'regionCategory',
           'isClassicOffline',
           'orderIndex',
+          'countryCode',
+          'difficulty',
+          'tags',
+          'isActive',
           'updatedAt'
         ]);
       allow delete: if isVerifiedUser()

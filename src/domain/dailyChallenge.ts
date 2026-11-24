@@ -87,10 +87,12 @@ export function drawDailyChallengeDeck(
   dateKey: string,
   count: number = DAILY_CHALLENGE_ROUNDS,
 ): readonly PolandLocation[] {
-  if (pool.length === 0) {
+  const activePool = pool.filter((loc) => loc.isActive !== false);
+  const source = activePool.length > 0 ? activePool : pool;
+  if (source.length === 0) {
     return [];
   }
-  const copy = [...pool];
+  const copy = [...source];
   const prng = createSeededPrng(hashDateKeyToSeed(dateKey));
 
   for (let i = copy.length - 1; i > 0; i -= 1) {

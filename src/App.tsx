@@ -68,7 +68,10 @@ export default function App() {
   const [locationCodeModalOpen, setLocationCodeModalOpen] = useState(false);
 
   const [locationsCatalog, setLocationsCatalog] = useState<readonly PolandLocation[]>(POLAND_LOCATIONS);
-  const [catalogState, setCatalogState] = useState<LocationCatalogState>({status: 'loading'});
+  const [catalogState, setCatalogState] = useState<LocationCatalogState>({
+    status: 'loading',
+    catalogKey: 'poland',
+  });
 
   const guestClientId = useMemo(() => getOrCreateGuestClientId(), []);
   const [rememberedGuestNick, setRememberedGuestNick] = useState<string>(() =>
@@ -91,7 +94,11 @@ export default function App() {
 
   const syncLocationsFromCloud = useCallback(
     async (forceRefresh = false, signal?: AbortSignal) => {
-      const res = await locationRepository.loadCatalog({forceRefresh, signal});
+      const res = await locationRepository.loadCatalog({
+        catalogKey: 'poland',
+        forceRefresh,
+        signal,
+      });
       if (signal?.aborted) {
         return;
       }
@@ -99,6 +106,7 @@ export default function App() {
         setLocationsCatalog(res.value.locations);
         setCatalogState({
           status: 'ready',
+          catalogKey: res.value.catalogKey,
           source: res.value.source,
           version: res.value.version,
           totalCount: res.value.locations.length,
@@ -108,6 +116,7 @@ export default function App() {
       } else {
         setCatalogState({
           status: 'error',
+          catalogKey: 'poland',
           message: res.error,
           source: 'seed_fallback',
           totalCount: POLAND_LOCATIONS.length,
