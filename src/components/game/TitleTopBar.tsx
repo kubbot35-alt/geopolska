@@ -20,6 +20,7 @@ export interface TitleTopBarProps {
   readonly isOnline: boolean;
   readonly onOpenLeaderboard: (dailyFirst?: boolean) => void;
   readonly onOpenLocationDatabase: () => void;
+  readonly onLockLocationDatabase: () => void;
   readonly locationDbUnlocked: boolean;
   readonly onToggleMute: () => void;
   readonly onSignIn: () => void;
@@ -110,6 +111,7 @@ export const TitleTopBar: React.FC<TitleTopBarProps> = ({
   isOnline,
   onOpenLeaderboard,
   onOpenLocationDatabase,
+  onLockLocationDatabase,
   locationDbUnlocked,
   onToggleMute,
   onSignIn,
@@ -137,16 +139,31 @@ export const TitleTopBar: React.FC<TitleTopBarProps> = ({
         Rankingi
       </button>
 
-      <button
-        type="button"
-        onClick={onOpenLocationDatabase}
-        className={FLAT_BAR_BUTTON}
-        title={locationDbUnlocked ? 'Otwórz Bazę Lokacji' : 'Baza Lokacji (wymagany kod)'}
-      >
-        <Database className="h-3.5 w-3.5 text-neutral-300" />
-        Baza Lokacji
-        {!locationDbUnlocked && <Lock className="h-3 w-3 text-neutral-400" />}
-      </button>
+      <div className="inline-flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onOpenLocationDatabase}
+          className={FLAT_BAR_BUTTON}
+          title={locationDbUnlocked ? 'Otwórz Bazę Lokacji' : 'Baza Lokacji (wymagany kod)'}
+        >
+          <Database className="h-3.5 w-3.5 text-neutral-300" />
+          Baza Lokacji
+          {!locationDbUnlocked && <Lock className="h-3 w-3 text-neutral-400" />}
+        </button>
+
+        {locationDbUnlocked && (
+          <button
+            type="button"
+            onClick={onLockLocationDatabase}
+            aria-label="Zablokuj Bazę Lokacji"
+            title="Zablokuj Bazę Lokacji"
+            className="flex h-10 items-center gap-1 rounded-lg border border-amber-500/35 bg-[#0C0E12]/65 px-2.5 text-xs font-medium text-amber-200 transition-colors duration-200 hover:border-amber-400/65 hover:bg-amber-950/40 hover:text-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 whitespace-nowrap shrink-0"
+          >
+            <Lock className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Zablokuj</span>
+          </button>
+        )}
+      </div>
 
       <button
         type="button"

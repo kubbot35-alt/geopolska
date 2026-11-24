@@ -28,6 +28,7 @@ export interface TitleScreenProps {
   readonly onStartDailyChallenge: () => void;
   readonly onOpenLeaderboard: (dailyFirst?: boolean) => void;
   readonly onOpenLocationDatabase: () => void;
+  readonly onLockLocationDatabase: () => void;
   readonly locationDbUnlocked: boolean;
   readonly locations: readonly PolandLocation[];
   readonly player: PlayerIdentity | null;
@@ -52,6 +53,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onStartDailyChallenge,
   onOpenLeaderboard,
   onOpenLocationDatabase,
+  onLockLocationDatabase,
   locationDbUnlocked,
   locations,
   player,
@@ -91,6 +93,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         isOnline={isOnline}
         onOpenLeaderboard={onOpenLeaderboard}
         onOpenLocationDatabase={onOpenLocationDatabase}
+        onLockLocationDatabase={onLockLocationDatabase}
         locationDbUnlocked={locationDbUnlocked}
         onToggleMute={onToggleMute}
         onSignIn={onSignIn}

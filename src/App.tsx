@@ -512,6 +512,10 @@ export default function App() {
               setLocationCodeModalOpen(true);
             }
           }}
+          onLockLocationDatabase={() => {
+            setLocationDbUnlocked(false);
+            setLocationDbOpen(false);
+          }}
           locationDbUnlocked={locationDbUnlocked}
           locations={locationsCatalog}
           player={player}
@@ -654,6 +658,10 @@ export default function App() {
       <LocationDatabaseModal
         open={locationDbOpen}
         onClose={() => setLocationDbOpen(false)}
+        onLock={() => {
+          setLocationDbUnlocked(false);
+          setLocationDbOpen(false);
+        }}
         repository={locationRepository}
         locations={locationsCatalog}
         catalogState={catalogState}
