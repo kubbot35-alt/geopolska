@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Database,
+  Lock,
   LogIn,
   LogOut,
   Trophy,
@@ -19,6 +20,7 @@ export interface TitleTopBarProps {
   readonly isOnline: boolean;
   readonly onOpenLeaderboard: (dailyFirst?: boolean) => void;
   readonly onOpenLocationDatabase: () => void;
+  readonly locationDbUnlocked: boolean;
   readonly onToggleMute: () => void;
   readonly onSignIn: () => void;
   readonly onSignOut: () => void;
@@ -108,6 +110,7 @@ export const TitleTopBar: React.FC<TitleTopBarProps> = ({
   isOnline,
   onOpenLeaderboard,
   onOpenLocationDatabase,
+  locationDbUnlocked,
   onToggleMute,
   onSignIn,
   onSignOut,
@@ -138,9 +141,11 @@ export const TitleTopBar: React.FC<TitleTopBarProps> = ({
         type="button"
         onClick={onOpenLocationDatabase}
         className={FLAT_BAR_BUTTON}
+        title={locationDbUnlocked ? 'Otwórz Bazę Lokacji' : 'Baza Lokacji (wymagany kod)'}
       >
         <Database className="h-3.5 w-3.5 text-neutral-300" />
         Baza Lokacji
+        {!locationDbUnlocked && <Lock className="h-3 w-3 text-neutral-400" />}
       </button>
 
       <button

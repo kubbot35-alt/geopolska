@@ -12,7 +12,9 @@ import {
   LeaderboardHistoryModal,
   type LeaderboardModalTab,
 } from './components/modals/LeaderboardHistoryModal';
+import {LocationAccessCodeModal} from './components/modals/LocationAccessCodeModal';
 import {LocationDatabaseModal} from './components/modals/LocationDatabaseModal';
+import {locationDatabaseCodeVerifier} from './domain/locationAccessGate';
 import {
   DAILY_CHALLENGE_ROUNDS,
   drawDailyChallengeDeck,
@@ -62,6 +64,8 @@ export default function App() {
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardTab, setLeaderboardTab] = useState<LeaderboardModalTab>('daily');
   const [locationDbOpen, setLocationDbOpen] = useState(false);
+  const [locationDbUnlocked, setLocationDbUnlocked] = useState(false);
+  const [locationCodeModalOpen, setLocationCodeModalOpen] = useState(false);
 
   const [locationsCatalog, setLocationsCatalog] = useState<readonly PolandLocation[]>(POLAND_LOCATIONS);
   const [catalogState, setCatalogState] = useState<LocationCatalogState>({status: 'loading'});
@@ -444,6 +448,7 @@ export default function App() {
       if (e.key === 'Escape') {
         if (guestPromptOpen && !guestSubmitting) setGuestPromptOpen(false);
         if (leaderboardOpen) setLeaderboardOpen(false);
+        if (locationCodeModalOpen) setLocationCodeModalOpen(false);
         if (locationDbOpen) setLocationDbOpen(false);
         return;
       }
@@ -451,6 +456,7 @@ export default function App() {
       if (
         guestPromptOpen ||
         leaderboardOpen ||
+        locationCodeModalOpen ||
         locationDbOpen
       ) {
         return;
@@ -478,6 +484,7 @@ export default function App() {
     guestPromptOpen,
     guestSubmitting,
     leaderboardOpen,
+    locationCodeModalOpen,
     locationDbOpen,
     state,
   ]);
@@ -498,7 +505,14 @@ export default function App() {
           onStartGame={handleStartGame}
           onStartDailyChallenge={handleStartDailyChallenge}
           onOpenLeaderboard={handleOpenLeaderboard}
-          onOpenLocationDatabase={() => setLocationDbOpen(true)}
+          onOpenLocationDatabase={() => {
+            if (locationDbUnlocked) {
+              setLocationDbOpen(true);
+            } else {
+              setLocationCodeModalOpen(true);
+            }
+          }}
+          locationDbUnlocked={locationDbUnlocked}
           locations={locationsCatalog}
           player={player}
           authLoading={authLoading}
@@ -624,6 +638,17 @@ export default function App() {
         player={player}
         guestClientId={guestClientId}
         onSignIn={() => void handleSignIn()}
+      />
+
+      <LocationAccessCodeModal
+        open={locationCodeModalOpen}
+        verifier={locationDatabaseCodeVerifier}
+        onClose={() => setLocationCodeModalOpen(false)}
+        onUnlocked={() => {
+          setLocationDbUnlocked(true);
+          setLocationCodeModalOpen(false);
+          setLocationDbOpen(true);
+        }}
       />
 
       <LocationDatabaseModal
