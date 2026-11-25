@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   CheckCircle2,
   CloudUpload,
+  Compass,
   Database,
   Edit3,
   Eye,
@@ -45,6 +46,7 @@ import type {
   RegionCategory,
 } from '../../domain/types';
 import {LocationSchemaPanel} from './LocationSchemaPanel';
+import {PolandGeneratorPanel} from './PolandGeneratorPanel';
 
 export const BOOTSTRAPPED_ADMIN_EMAIL = 'jakub.j.linert@gmail.com';
 
@@ -62,7 +64,7 @@ export interface LocationDatabaseModalProps {
   readonly onCatalogMutated: () => Promise<void>;
 }
 
-type ModalViewTab = 'locations' | 'schema';
+type ModalViewTab = 'locations' | 'generator' | 'schema';
 type StatusFilter = 'all' | 'active' | 'inactive';
 
 const CATEGORY_LABELS: Readonly<Record<RegionCategory, string>> = {
@@ -298,6 +300,9 @@ export const LocationDatabaseModal: React.FC<LocationDatabaseModalProps> = ({
       return;
     }
     setActiveCatalog(nextKey);
+    if (nextKey !== 'poland' && activeView === 'generator') {
+      setActiveView('locations');
+    }
     setFormOpen(false);
     setForm(createEmptyForm(nextKey));
     setSearchQuery('');
@@ -614,6 +619,23 @@ export const LocationDatabaseModal: React.FC<LocationDatabaseModalProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  if (activeCatalog !== 'poland') {
+                    handleSelectCatalog('poland');
+                  }
+                  setActiveView('generator');
+                }}
+                className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
+                  activeView === 'generator'
+                    ? 'bg-emerald-500/20 text-emerald-200'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Compass className="h-3.5 w-3.5 shrink-0" />
+                Generator PL
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveView('schema')}
                 className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                   activeView === 'schema'
@@ -659,6 +681,15 @@ export const LocationDatabaseModal: React.FC<LocationDatabaseModalProps> = ({
 
           {activeView === 'schema' ? (
             <LocationSchemaPanel />
+          ) : activeView === 'generator' ? (
+            <PolandGeneratorPanel
+              repository={repository}
+              existingPolandLocations={locations}
+              player={player}
+              isAdmin={isAdmin}
+              isOnline={isOnline}
+              onCatalogMutated={onCatalogMutated}
+            />
           ) : (
             <>
               {/* Summary KPIs */}

@@ -2,6 +2,7 @@
  * Pure headless domain contracts, discriminated unions, and dependency-inversion ports for GeoPolska.
  * Contains zero UI, DOM, or third-party framework dependencies.
  */
+import type {CatalogReplaceProgress, CatalogReplaceSummary} from './polandGeneratorTypes';
 
 export interface GeoCoordinate {
   readonly lat: number;
@@ -379,6 +380,12 @@ export interface ILocationCatalogRepository {
     actorUid: string,
     catalogKey?: CatalogKey,
   ): Promise<Result<void, string>>;
+  replacePolandOnlineCatalog(
+    generatedLocations: readonly PolandLocation[],
+    actorUid: string,
+    onProgress?: (progress: CatalogReplaceProgress) => void,
+    signal?: AbortSignal,
+  ): Promise<Result<CatalogReplaceSummary, string>>;
 }
 
 export interface IAiExplorerGateway {

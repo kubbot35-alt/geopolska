@@ -20,11 +20,16 @@ import {
   validateCoordinatesForCatalog,
 } from '../../domain/catalogSchema';
 import {
+  FEATURED_OFFLINE_LOCATIONS,
   POLAND_LOCATIONS,
   buildFreePhotoProxyUrl,
   slugifyLocationId,
   sortLocationsDeterministically,
 } from '../../domain/polandLocations';
+import type {
+  CatalogReplaceProgress,
+  CatalogReplaceSummary,
+} from '../../domain/polandGeneratorTypes';
 import type {
   CatalogKey,
   CatalogMetaSnapshot,
@@ -698,6 +703,223 @@ export class FirestoreLocationRepository implements ILocationCatalogRepository {
       return {
         ok: false,
         error: error instanceof Error ? error.message : 'Nie udało się usunąć lokacji z Firebase.',
+      };
+    }
+  }
+
+  async replacePolandOnlineCatalog(
+    generatedLocations: readonly PolandLocation[],
+    actorUid: string,
+    onProgress?: (progress: CatalogReplaceProgress) => void,
+    signal?: AbortSignal,
+  ): Promise<Result<CatalogReplaceSummary, string>> {
+    if (generatedLocations.length === 0) {
+      return {ok: false, error: 'Brak wygenerowanych lokalizacji do zapisania.'};
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return {ok: false, error: 'Zastąpienie bazy w Firebase wymaga połączenia z internetem.'};
+    }
+
+    try {
+      onProgress?.({phase: 'reading', processed: 0, total: 1});
+      const existingRemote = await fetchAllRemoteLocations('poland');
+      if (signal?.aborted) {
+        return {ok: false, error: 'Operacja została przerwana.'};
+      }
+      const existingById = new Map<string, PolandLocation>(
+        existingRemote.map((loc) => [loc.id, loc]),
+      );
+
+      const classicIdSet = new Set<string>(FEATURED_OFFLINE_LOCATIONS.map((loc) => loc.id));
+      const classicNameSet = new Set<string>(
+        FEATURED_OFFLINE_LOCATIONS.map((loc) => loc.name.trim().toLowerCase()),
+      );
+
+      const classicEntries = FEATURED_OFFLINE_LOCATIONS.map((loc, idx) =>
+        sanitizeLocationPayload(
+          {
+            id: loc.id,
+            catalogKey: 'poland',
+            name: loc.name,
+            voivodeship: loc.voivodeship,
+            lat: loc.lat,
+            lng: loc.lng,
+            imageUrl: loc.imageUrl,
+            hint: loc.hint,
+            funFact: loc.funFact,
+            regionCategory: loc.regionCategory,
+            isClassicOffline: true,
+            countryCode: 'PL',
+            difficulty: 'easy',
+            tags: [],
+            isActive: true,
+          },
+          idx,
+        ),
+      );
+
+      const dedupedOnline: ReturnType<typeof sanitizeLocationPayload>[] = [];
+      const seenOnlineIds = new Set<string>();
+      const seenOnlineNames = new Set<string>();
+      for (const rawLoc of generatedLocations) {
+        const cleanNameKey = rawLoc.name.trim().toLowerCase();
+        if (classicIdSet.has(rawLoc.id) || classicNameSet.has(cleanNameKey)) {
+          continue;
+        }
+        const sanitized = sanitizeLocationPayload(
+          {
+            id: rawLoc.id,
+            catalogKey: 'poland',
+            name: rawLoc.name,
+            voivodeship: rawLoc.voivodeship,
+            lat: rawLoc.lat,
+            lng: rawLoc.lng,
+            imageUrl: rawLoc.imageUrl,
+            hint: rawLoc.hint,
+            funFact: rawLoc.funFact,
+            regionCategory: rawLoc.regionCategory,
+            isClassicOffline: false,
+            countryCode: 'PL',
+            difficulty: rawLoc.difficulty ?? 'medium',
+            tags: rawLoc.tags ?? [],
+            isActive: rawLoc.isActive !== false,
+          },
+          classicEntries.length + dedupedOnline.length,
+        );
+        if (
+          classicIdSet.has(sanitized.id) ||
+          seenOnlineIds.has(sanitized.id) ||
+          seenOnlineNames.has(cleanNameKey)
+        ) {
+          continue;
+        }
+        seenOnlineIds.add(sanitized.id);
+        seenOnlineNames.add(cleanNameKey);
+        dedupedOnline.push(sanitized);
+      }
+
+      const recordsToWrite = [...classicEntries, ...dedupedOnline];
+      const keepIdSet = new Set<string>(recordsToWrite.map((item) => item.id));
+      const staleIdsToDelete = existingRemote
+        .map((loc) => loc.id)
+        .filter((id) => !keepIdSet.has(id));
+
+      onProgress?.({phase: 'writing', processed: 0, total: recordsToWrite.length});
+      let written = 0;
+      for (let start = 0; start < recordsToWrite.length; start += MIGRATION_BATCH_SIZE) {
+        if (signal?.aborted) {
+          return {ok: false, error: 'Zapis został przerwany w trakcie wysyłania partii.'};
+        }
+        const chunk = recordsToWrite.slice(start, start + MIGRATION_BATCH_SIZE);
+        const batch = writeBatch(db);
+        for (const item of chunk) {
+          const docRef = doc(db, LOCATIONS_COLLECTION, item.id);
+          if (existingById.has(item.id)) {
+            batch.update(docRef, {
+              name: item.name,
+              voivodeship: item.voivodeship,
+              lat: item.lat,
+              lng: item.lng,
+              imageUrl: item.imageUrl,
+              hint: item.hint,
+              funFact: item.funFact,
+              regionCategory: item.regionCategory,
+              isClassicOffline: item.isClassicOffline,
+              orderIndex: item.orderIndex,
+              countryCode: item.countryCode,
+              difficulty: item.difficulty,
+              tags: item.tags,
+              isActive: item.isActive,
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            batch.set(docRef, {
+              ...item,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+        try {
+          await batch.commit();
+        } catch (batchError: unknown) {
+          if (isPermissionError(batchError)) {
+            handleFirestoreError(batchError, OperationType.WRITE, LOCATIONS_COLLECTION);
+          }
+          throw batchError;
+        }
+        written += chunk.length;
+        onProgress?.({phase: 'writing', processed: written, total: recordsToWrite.length});
+      }
+
+      let deleted = 0;
+      if (staleIdsToDelete.length > 0) {
+        onProgress?.({phase: 'deleting', processed: 0, total: staleIdsToDelete.length});
+        for (let start = 0; start < staleIdsToDelete.length; start += MIGRATION_BATCH_SIZE) {
+          if (signal?.aborted) {
+            return {ok: false, error: 'Usuwanie starych lokalizacji zostało przerwane.'};
+          }
+          const chunk = staleIdsToDelete.slice(start, start + MIGRATION_BATCH_SIZE);
+          const batch = writeBatch(db);
+          for (const staleId of chunk) {
+            batch.delete(doc(db, LOCATIONS_COLLECTION, staleId));
+          }
+          try {
+            await batch.commit();
+          } catch (deleteError: unknown) {
+            if (isPermissionError(deleteError)) {
+              handleFirestoreError(deleteError, OperationType.DELETE, LOCATIONS_COLLECTION);
+            }
+            throw deleteError;
+          }
+          deleted += chunk.length;
+          onProgress?.({phase: 'deleting', processed: deleted, total: staleIdsToDelete.length});
+        }
+      }
+
+      onProgress?.({phase: 'meta', processed: 0, total: 1});
+      const finalCatalog: PolandLocation[] = sortLocationsDeterministically(
+        recordsToWrite.map((item) => ({
+          id: item.id,
+          catalogKey: item.catalogKey,
+          name: item.name,
+          voivodeship: item.voivodeship,
+          lat: item.lat,
+          lng: item.lng,
+          imageUrl: item.imageUrl,
+          hint: item.hint,
+          funFact: item.funFact,
+          regionCategory: item.regionCategory,
+          isClassicOffline: item.isClassicOffline,
+          orderIndex: item.orderIndex,
+          countryCode: item.countryCode,
+          difficulty: item.difficulty,
+          tags: item.tags,
+          isActive: item.isActive,
+        })),
+      ) as PolandLocation[];
+
+      const meta = await bumpRemoteCatalogMeta('poland', actorUid, finalCatalog.length);
+      await writeCachedLocationsCatalog(meta.version, finalCatalog, 'poland');
+      onProgress?.({phase: 'meta', processed: 1, total: 1});
+
+      return {
+        ok: true,
+        value: {
+          meta,
+          classicPreserved: classicEntries.length,
+          writtenCount: dedupedOnline.length,
+          deletedCount: deleted,
+          totalCount: finalCatalog.length,
+        },
+      };
+    } catch (error: unknown) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : 'Nie udało się zastąpić katalogu Polski w Firebase Firestore.',
       };
     }
   }

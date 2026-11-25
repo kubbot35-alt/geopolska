@@ -6,6 +6,7 @@ import path from 'path';
 import {fileURLToPath} from 'url';
 import {GoogleGenAI, ThinkingLevel} from '@google/genai';
 import {z} from 'zod';
+import {generateVoivodeshipLocations} from './src/infrastructure/generator/polandGeneratorBackend';
 
 const FREE_GEMINI_MODEL = 'gemini-4-hydrogen';
 
@@ -40,6 +41,13 @@ const DeepAnalysisSchema = z.object({
   distanceKm: z.number().min(0).max(2500),
   hint: z.string().min(1).max(300),
   funFact: z.string().min(1).max(400),
+});
+
+const VoivodeshipGeneratorSchema = z.object({
+  voivodeship: z.string().min(2).max(60),
+  limit: z.number().int().min(10).max(120).default(70),
+  excludeNames: z.array(z.string().min(1).max(120)).max(2500).default([]),
+  photoFreshness: z.enum(['only_2025_2026', 'prefer_2025_2026', 'any']).default('only_2025_2026'),
 });
 
 interface GroundingSource {
@@ -227,6 +235,26 @@ async function startServer(): Promise<void> {
       res.send(buffer);
     } catch {
       res.status(502).send('Photo proxy error');
+    }
+  });
+
+  // Server-side Poland location generator (Wikidata SPARQL + batched Wikimedia/Wikipedia verification)
+  app.post('/api/location-generator/voivodeship', async (req: Request, res: Response) => {
+    const parsed = VoivodeshipGeneratorSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({error: 'Nieprawidłowe parametry żądania generatora województwa.'});
+      return;
+    }
+
+    try {
+      const result = await generateVoivodeshipLocations(parsed.data);
+      res.json(result);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Nie udało się pobrać zweryfikowanych lokalizacji z Wikidaty.';
+      res.status(502).json({error: message});
     }
   });
 
